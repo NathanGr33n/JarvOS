@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+*.log
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Models and binaries (per project spec)
+models/
+bin/
+
+# Local config and logs
+*.wav
+*.tmp
+*.bak
+~/.voice_shell/
