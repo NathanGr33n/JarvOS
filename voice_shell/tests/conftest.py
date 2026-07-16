@@ -26,6 +26,41 @@ _mock_sd_module.CallbackFlags = MagicMock()
 sys.modules["sounddevice"] = _mock_sd_module
 _mock_sd_module._mock_stream = _mock_stream  # expose for test access
 
+# Mock pynput.keyboard for WakeWordDetector hotkey backend tests.
+_mock_pynput = MagicMock()
+_mock_key = MagicMock()
+_mock_key.ctrl = MagicMock()
+_mock_key.shift = MagicMock()
+_mock_key.space = MagicMock()
+_mock_key.ctrl_l = MagicMock()
+_mock_key.ctrl_r = MagicMock()
+_mock_key.shift_l = MagicMock()
+_mock_key.shift_r = MagicMock()
+_mock_pynput.keyboard.Key = _mock_key
+
+_mock_listener = MagicMock()
+_mock_listener.is_alive.return_value = False
+_mock_pynput.keyboard.Listener = MagicMock(return_value=_mock_listener)
+
+sys.modules["pynput"] = _mock_pynput
+sys.modules["pynput.keyboard"] = _mock_pynput.keyboard
+
+# Mock pvporcupine for WakeWordDetector tests.
+_mock_porcupine = MagicMock()
+_mock_porcupine_handle = MagicMock()
+_mock_porcupine_handle.frame_length = 512
+_mock_porcupine_handle.process.return_value = 0
+_mock_porcupine_handle.delete = MagicMock()
+_mock_porcupine.create.return_value = _mock_porcupine_handle
+sys.modules["pvporcupine"] = _mock_porcupine
+
+# Mock openwakeword for WakeWordDetector tests.
+_mock_oww = MagicMock()
+_mock_oww_model = MagicMock()
+_mock_oww_model.predict.return_value = {"model": 0.0}
+_mock_oww.Model.return_value = _mock_oww_model
+sys.modules["openwakeword"] = _mock_oww
+
 
 @pytest.fixture(autouse=True)
 def reset_mocks():
@@ -36,4 +71,11 @@ def reset_mocks():
     _mock_sd_module.RawInputStream.reset_mock()
     _mock_sd_module.RawInputStream.return_value = _mock_stream
     _mock_sd_module.RawInputStream.side_effect = None
+    _mock_porcupine_handle.reset_mock()
+    _mock_porcupine_handle.process.return_value = 0
+    _mock_porcupine_handle.frame_length = 512
+    _mock_oww_model.reset_mock()
+    _mock_oww_model.predict.return_value = {"model": 0.0}
+    _mock_listener.reset_mock()
+    _mock_listener.is_alive.return_value = False
     yield
