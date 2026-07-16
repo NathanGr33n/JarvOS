@@ -54,13 +54,13 @@ def _action_cd(path: str) -> ActionResult:
         return ActionResult(error=f"Cannot change directory to {path}: {exc}")
 
 
-def _action_time() -> ActionResult:
+def _action_time(_: str = "") -> ActionResult:
     """Return the current time."""
     import datetime
     return ActionResult(stdout=datetime.datetime.now().strftime("%I:%M %p"))
 
 
-def _action_date() -> ActionResult:
+def _action_date(_: str = "") -> ActionResult:
     """Return the current date."""
     import datetime
     return ActionResult(
@@ -95,8 +95,12 @@ class ActionRegistry:
             allowed_shell_commands: List of permitted shell command names (e.g., ``["ls", "cat"]``).
             allowed_apps: List of permitted application names (e.g., ``["firefox"]``).
         """
-        self.allowed_shell_commands = set(allowed_shell_commands or ["ls", "cat", "pwd", "date"])
-        self.allowed_apps = set(allowed_apps or ["firefox", "nautilus", "code", "terminal"])
+        self.allowed_shell_commands = set(
+            allowed_shell_commands if allowed_shell_commands is not None else ["ls", "cat", "pwd", "date", "cd", "time"]
+        )
+        self.allowed_apps = set(
+            allowed_apps if allowed_apps is not None else ["firefox", "nautilus", "code", "terminal"]
+        )
 
         self._registry: Dict[str, Callable[[str], ActionResult]] = {}
         self._build_registry()
