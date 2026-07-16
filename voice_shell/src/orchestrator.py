@@ -5,16 +5,16 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Optional
 
-from ..audio.capture import AudioCapture
-from ..audio.playback import AudioPlayback
-from ..audio.vad import VoiceActivityDetector
-from ..config import Config
-from ..engines.llm import LLMClient
-from ..engines.stt import STTClient
-from ..engines.tts import TTSClient
-from ..engines.wwd import WakeWordDetector
-from ..utils.wav_writer import write_wav_from_buffer
-from .executor import ActionExecutor
+from .audio.capture import AudioCapture
+from .audio.playback import AudioPlayback
+from .audio.vad import VoiceActivityDetector
+from .config import Config
+from .engines.llm import LLMClient
+from .engines.stt import STTClient
+from .engines.tts import TTSClient
+from .engines.wwd import WakeWordDetector
+from .utils.wav_writer import write_wav_from_buffer
+from .actions.executor import ActionExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +258,7 @@ class Orchestrator:
 
         # Update conversation history
         self._history.append((self._last_transcript, result.cleaned_response))
-        if len(self._history) > 3:
+        while len(self._history) > 3:
             self._history.pop(0)
 
         await self._transition_to(State.IDLE)
