@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Optional
 from pathlib import Path
 
@@ -88,7 +88,7 @@ class Config:
             raw = yaml.safe_load(f) or {}
 
         def _from_dict(data: Dict[str, Any], section_class: type) -> Any:
-            known = {f.name for f in field(section_class)}
+            known = {f.name for f in fields(section_class)}
             filtered = {k: v for k, v in data.items() if k in known}
             return section_class(**filtered)
 
