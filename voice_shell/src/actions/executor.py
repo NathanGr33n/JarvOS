@@ -31,7 +31,7 @@ class ActionExecutor:
 
     # Regex pattern for action tags: [EXEC:category:action[:argument]]
     _ACTION_TAG_PATTERN = re.compile(
-        r"\[EXEC:(?P<category>shell|app):(?P<action>[^\]:]+)(?::(?P<arg>[^\]]*))?\]"
+        r"\[EXEC:(?P<category>shell|app):(?P<action>[^\]: ]+)(?:[ :](?P<arg>[^\]]*))?\]"
     )
 
     # Standalone commands (no arguments)
