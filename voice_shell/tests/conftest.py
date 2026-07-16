@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from unittest.mock import MagicMock
 
@@ -20,6 +21,7 @@ _mock_stream.stop = MagicMock()
 _mock_stream.close = MagicMock()
 
 _mock_sd_module.RawInputStream = MagicMock(return_value=_mock_stream)
+_mock_sd_module.RawOutputStream = MagicMock(return_value=_mock_stream)
 _mock_sd_module.PortAudioError = Exception
 _mock_sd_module.CallbackFlags = MagicMock()
 
@@ -71,6 +73,9 @@ def reset_mocks():
     _mock_sd_module.RawInputStream.reset_mock()
     _mock_sd_module.RawInputStream.return_value = _mock_stream
     _mock_sd_module.RawInputStream.side_effect = None
+    _mock_sd_module.RawOutputStream.reset_mock()
+    _mock_sd_module.RawOutputStream.return_value = _mock_stream
+    _mock_sd_module.RawOutputStream.side_effect = None
     _mock_porcupine_handle.reset_mock()
     _mock_porcupine_handle.process.return_value = 0
     _mock_porcupine_handle.frame_length = 512
