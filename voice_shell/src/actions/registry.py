@@ -52,6 +52,9 @@ def _action_cd(path: str) -> ActionResult:
         return ActionResult(stdout=os.getcwd())
     except OSError as exc:
         return ActionResult(error=f"Cannot change directory to {path}: {exc}")
+def _action_pwd(_: str = "") -> ActionResult:
+    """Return the current working directory."""
+    return ActionResult(stdout=os.getcwd())
 
 
 def _action_time(_: str = "") -> ActionResult:
@@ -114,7 +117,7 @@ class ActionRegistry:
         if "cd" in self.allowed_shell_commands:
             self._registry["cd"] = _action_cd
         if "pwd" in self.allowed_shell_commands:
-            self._registry["pwd"] = _action_cd
+            self._registry["pwd"] = _action_pwd
         if "date" in self.allowed_shell_commands:
             self._registry["date"] = _action_date
         if "time" in self.allowed_shell_commands:

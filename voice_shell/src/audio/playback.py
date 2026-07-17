@@ -152,3 +152,12 @@ class AudioPlayback:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.stop()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"sample_rate={self.sample_rate}, "
+            f"channels={self.channels}, "
+            f"running={self._running}"
+            f")"
+        )

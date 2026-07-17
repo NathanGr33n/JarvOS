@@ -1,6 +1,4 @@
 import asyncio
-import io
-import shlex
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -58,7 +56,6 @@ class TTSClient:
             str(self.speaker_id),
             "--output_file",
             "-",  # write to stdout
-            "--json-input",  # allows SSML and speaker control via JSON
         ]
 
         try:

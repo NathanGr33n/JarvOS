@@ -1,0 +1,32 @@
+audio:
+  input_device: null
+  output_device: null
+  sample_rate_input: 16000
+  sample_rate_output: 22050
+  chunk_size: 512
+  max_recording_duration: 30
+wake_word:
+  engine: "hotkey"
+  model_path: null
+  keyword: "Hey Nova"
+  sensitivity: 0.5
+stt:
+  engine: "whisper.cpp"
+  base_url: "http://127.0.0.1:8081"
+  language: "en"
+  translate: false
+llm:
+  engine: "llama.cpp"
+  base_url: "http://127.0.0.1:8082"
+  max_tokens: 512
+  temperature: 0.7
+  system_prompt: null
+tts:
+  engine: "piper"
+  model_path: "models/piper/en_US-lessac-medium.onnx"
+  speaker_id: 0
+  binary_path: "piper"
+actions:
+  allowed_shell_commands: ["ls", "cat", "pwd", "date", "cd", "time"]
+  allowed_apps: ["firefox", "nautilus", "code", "terminal"]
+  require_confirmation: false

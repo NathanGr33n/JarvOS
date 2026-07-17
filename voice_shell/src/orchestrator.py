@@ -15,6 +15,7 @@ from .engines.tts import TTSClient
 from .engines.wwd import WakeWordDetector
 from .utils.wav_writer import write_wav_from_buffer
 from .actions.executor import ActionExecutor
+from .actions.registry import ActionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,12 @@ class Orchestrator:
         )
 
         # Action layer
-        self.executor = ActionExecutor()
+        self.executor = ActionExecutor(
+            registry=ActionRegistry(
+                allowed_shell_commands=self.config.actions.allowed_shell_commands,
+                allowed_apps=self.config.actions.allowed_apps,
+            )
+        )
         self.system_prompt = self.config.llm.system_prompt or self.DEFAULT_SYSTEM_PROMPT
 
         # Conversation history (last 3 turns for context)
