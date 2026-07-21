@@ -13,6 +13,7 @@ from .engines.llm import LLMClient
 from .engines.stt import STTClient
 from .engines.tts import TTSClient
 from .engines.wwd import WakeWordDetector
+from .hud import TextHUD
 from .utils.wav_writer import write_wav_from_buffer
 from .actions.executor import ActionExecutor
 from .actions.registry import ActionRegistry
@@ -46,16 +47,13 @@ class Orchestrator:
         "Your name is Nova.\n\n"
         "Rules:\n"
         "1. Be concise. Speak naturally but briefly. Users are listening, not reading.\n"
-        "2. If the user asks you to perform an action, start your response with the action in brackets.\n"
-        "3. Supported actions:\n"
-        "   - [EXEC:shell:ls]           (list directory)\n"
-        "   - [EXEC:shell:cat <path>]   (read file contents)\n"
-        "   - [EXEC:shell:cd <path>]    (change directory)\n"
-        "   - [EXEC:app:firefox]        (launch application)\n"
-        "   - [EXEC:time]               (read current time)\n"
-        "   - [EXEC:date]               (read current date)\n"
-        "4. If you cannot perform an action, say so and explain why.\n"
-        "5. Never confirm destructive actions. For this proof-of-concept, only read/list actions are permitted.\n"
+        "2. If actions are needed, respond in JSON with keys response and actions.\n"
+        "3. Action format: {\"name\": \"ls\", \"arg\": \"optional-argument\"}.\n"
+        "4. Supported action names: ls, cat, cd, pwd, time, date, app:firefox, app:nautilus, app:code, app:terminal.\n"
+        "5. If no action is needed, return plain natural language text.\n"
+        "6. If you cannot perform an action, say so and explain why.\n"
+        "7. Never confirm destructive actions. Only read/list and approved app launch actions are permitted.\n"
+        "8. Legacy [EXEC:...] tags are still accepted, but JSON is preferred.\n"
     )
 
     def __init__(self, config: Optional[Config] = None):
@@ -114,6 +112,10 @@ class Orchestrator:
             )
         )
         self.system_prompt = self.config.llm.system_prompt or self.DEFAULT_SYSTEM_PROMPT
+        self.hud = TextHUD(
+            enabled=self.config.hud.enabled,
+            show_timestamps=self.config.hud.show_timestamps,
+        )
 
         # Conversation history (last 3 turns for context)
         self._history: list[tuple[str, str]] = []
@@ -161,6 +163,7 @@ class Orchestrator:
         """Log and switch to a new operational state."""
         if self.state != new_state:
             logger.info("State: %s → %s", self.state.name, new_state.name)
+            self.hud.state(self.state.name, new_state.name)
         self.state = new_state
 
     # ------------------------------------------------------------------
@@ -211,6 +214,7 @@ class Orchestrator:
             return
 
         logger.info("Transcript: %s", self._last_transcript)
+        self.hud.transcript(self._last_transcript)
         await self._transition_to(State.THINKING)
 
     async def _thinking_and_speaking_phase(self) -> None:
@@ -251,16 +255,19 @@ class Orchestrator:
         result = self.executor.parse_and_execute(llm_response)
         if result.cleaned_response:
             logger.info("Response: %s", result.cleaned_response)
+            self.hud.response(result.cleaned_response)
 
         # If there were action results, speak them too
         if result.action_result:
             logger.info("Action result: %s", result.action_result)
+            self.hud.action_result(result.action_result)
             try:
                 action_audio = self.tts.synthesize(f"Action result: {result.action_result}")
                 self.audio_playback.queue_chunk(action_audio)
                 await self.audio_playback.wait_for_empty()
             except Exception as exc:
                 logger.error("TTS synthesis of action result failed: %s", exc)
+                self.hud.error(f"TTS synthesis of action result failed: {exc}")
 
         # Update conversation history
         self._history.append((self._last_transcript, result.cleaned_response))

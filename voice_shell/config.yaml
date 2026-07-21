@@ -30,3 +30,6 @@ actions:
   allowed_shell_commands: ["ls", "cat", "pwd", "date", "cd", "time"]
   allowed_apps: ["firefox", "nautilus", "code", "terminal"]
   require_confirmation: false
+hud:
+  enabled: true
+  show_timestamps: true
