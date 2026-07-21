@@ -35,7 +35,7 @@ class TestOrchestrator:
     def test_default_system_prompt(self, orchestrator):
         """Verify the default system prompt is set."""
         assert "Nova" in orchestrator.system_prompt
-        assert "[EXEC:shell:ls]" in orchestrator.system_prompt
+        assert "respond in JSON with keys response and actions" in orchestrator.system_prompt
 
     def test_repr(self, orchestrator):
         """Verify the repr shows the state and running flag."""
