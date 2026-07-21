@@ -1,6 +1,6 @@
 import os
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 
@@ -13,16 +13,36 @@ class ActionResult:
     error: Optional[str] = None
 
 
-def _action_ls(_: str = "") -> ActionResult:
-    """Execute ``ls -la`` in the current directory."""
+def _resolve_existing_path(path: str) -> tuple[Optional[str], Optional[str]]:
+    """Return an absolute normalized path if it exists, otherwise an error."""
+    candidate = path.strip() if path else "."
+    expanded = os.path.expanduser(candidate)
+    normalized = os.path.abspath(expanded)
+    if not os.path.exists(normalized):
+        return None, f"Path not found: {candidate}"
+    return normalized, None
+
+
+def _action_ls(path: str = "") -> ActionResult:
+    """Execute ``ls -la`` in the current or requested directory."""
+    target, error = _resolve_existing_path(path)
+    if error:
+        return ActionResult(error=error)
+    if target is None:
+        return ActionResult(error="Path validation failed for ls.")
+    if not os.path.isdir(target):
+        return ActionResult(error=f"Not a directory: {target}")
     result = subprocess.run(
-        ["ls", "-la"],
+        ["ls", "-la", target],
         capture_output=True,
         text=True,
         check=False,
     )
+    stdout = result.stdout.strip()
+    if len(stdout) > 4000:
+        stdout = f"{stdout[:4000]}\n...[truncated]"
     return ActionResult(
-        stdout=result.stdout.strip(),
+        stdout=stdout,
         stderr=result.stderr.strip(),
         returncode=result.returncode,
     )
@@ -30,16 +50,24 @@ def _action_ls(_: str = "") -> ActionResult:
 
 def _action_cat(filepath: str) -> ActionResult:
     """Read the contents of a file using ``cat``."""
-    if not os.path.exists(filepath):
-        return ActionResult(error=f"File not found: {filepath}")
+    target, error = _resolve_existing_path(filepath)
+    if error:
+        return ActionResult(error=error)
+    if target is None:
+        return ActionResult(error="Path validation failed for cat.")
+    if not os.path.isfile(target):
+        return ActionResult(error=f"Not a file: {target}")
     result = subprocess.run(
-        ["cat", filepath],
+        ["cat", target],
         capture_output=True,
         text=True,
         check=False,
     )
+    stdout = result.stdout.strip()
+    if len(stdout) > 4000:
+        stdout = f"{stdout[:4000]}\n...[truncated]"
     return ActionResult(
-        stdout=result.stdout.strip(),
+        stdout=stdout,
         stderr=result.stderr.strip(),
         returncode=result.returncode,
     )
@@ -47,11 +75,19 @@ def _action_cat(filepath: str) -> ActionResult:
 
 def _action_cd(path: str) -> ActionResult:
     """Change the current working directory."""
+    target, error = _resolve_existing_path(path)
+    if error:
+        return ActionResult(error=error)
+    if target is None:
+        return ActionResult(error="Path validation failed for cd.")
+    if not os.path.isdir(target):
+        return ActionResult(error=f"Not a directory: {target}")
     try:
-        os.chdir(path)
+        os.chdir(target)
         return ActionResult(stdout=os.getcwd())
     except OSError as exc:
-        return ActionResult(error=f"Cannot change directory to {path}: {exc}")
+        return ActionResult(error=f"Cannot change directory to {target}: {exc}")
+
 def _action_pwd(_: str = "") -> ActionResult:
     """Return the current working directory."""
     return ActionResult(stdout=os.getcwd())

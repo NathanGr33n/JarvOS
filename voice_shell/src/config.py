@@ -61,6 +61,11 @@ class ActionsConfig:
     allowed_apps: list = field(default_factory=lambda: ["firefox", "nautilus", "code", "terminal"])
     require_confirmation: bool = False
 
+@dataclass
+class HUDConfig:
+    enabled: bool = True
+    show_timestamps: bool = True
+
 
 @dataclass
 class Config:
@@ -70,6 +75,7 @@ class Config:
     llm: LLMConfig = field(default_factory=LLMConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     actions: ActionsConfig = field(default_factory=ActionsConfig)
+    hud: HUDConfig = field(default_factory=HUDConfig)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
@@ -99,4 +105,5 @@ class Config:
             llm=_from_dict(raw.get("llm", {}), LLMConfig),
             tts=_from_dict(raw.get("tts", {}), TTSConfig),
             actions=_from_dict(raw.get("actions", {}), ActionsConfig),
+            hud=_from_dict(raw.get("hud", {}), HUDConfig),
         )
