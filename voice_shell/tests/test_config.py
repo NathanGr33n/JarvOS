@@ -9,6 +9,7 @@ import yaml
 from voice_shell.src.config import (
     AudioConfig,
     Config,
+    HUDConfig,
     LLMConfig,
     STTConfig,
     TTSConfig,
@@ -62,6 +63,9 @@ class TestConfigDefaults:
         assert isinstance(cfg.stt, STTConfig)
         assert isinstance(cfg.llm, LLMConfig)
         assert isinstance(cfg.tts, TTSConfig)
+        assert isinstance(cfg.hud, HUDConfig)
+        assert cfg.hud.enabled is True
+        assert cfg.hud.show_timestamps is True
 
 
 class TestConfigFromYaml:

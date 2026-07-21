@@ -94,7 +94,7 @@ class TestBuiltInActions:
         """Verify that cd returns an error for an invalid directory."""
         result = _action_cd("/nonexistent/directory/12345")
         assert result.error is not None
-        assert "Cannot change directory" in result.error
+        assert "Path not found" in result.error
 
     def test_action_time(self):
         """Verify that time returns a formatted string."""
