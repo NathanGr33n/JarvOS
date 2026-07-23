@@ -78,7 +78,7 @@ class TestBuiltInActions:
         """Verify that cat returns an error for a missing file."""
         result = _action_cat("/nonexistent/path/file.txt")
         assert result.error is not None
-        assert "File not found" in result.error
+        assert "Path not found" in result.error
 
     def test_action_cd_valid(self, tmp_path: Path):
         """Verify that cd changes to a valid directory."""
