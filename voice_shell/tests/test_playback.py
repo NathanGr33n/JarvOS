@@ -9,6 +9,20 @@ from voice_shell.src.audio.playback import AudioPlayback, AudioPlaybackError
 class TestAudioPlayback:
     """Tests for the AudioPlayback module."""
 
+    @staticmethod
+    def _mock_loop_with_closing_create_task():
+        """Build a loop mock that closes passed coroutines from create_task."""
+        mock_loop = MagicMock()
+
+        def _create_task(coro):
+            coro.close()
+            task = MagicMock()
+            task.cancel = MagicMock()
+            return task
+
+        mock_loop.create_task.side_effect = _create_task
+        return mock_loop
+
     def test_init_default_params(self):
         """Verify default initialization parameters."""
         playback = AudioPlayback()
@@ -37,8 +51,7 @@ class TestAudioPlayback:
     def test_start_creates_and_starts_stream(self, mock_get_loop):
         """Verify that start() creates a RawOutputStream and starts it."""
         import sounddevice as sd
-
-        mock_loop = MagicMock()
+        mock_loop = self._mock_loop_with_closing_create_task()
         mock_get_loop.return_value = mock_loop
         playback = AudioPlayback()
         playback.start()
@@ -70,8 +83,7 @@ class TestAudioPlayback:
     def test_stop_closes_stream(self, mock_get_loop):
         """Verify that stop() closes and cleans up the stream."""
         import sounddevice as sd
-
-        mock_loop = MagicMock()
+        mock_loop = self._mock_loop_with_closing_create_task()
         mock_get_loop.return_value = mock_loop
         playback = AudioPlayback()
         playback.start()
@@ -86,8 +98,7 @@ class TestAudioPlayback:
     def test_double_start_is_noop(self, mock_get_loop):
         """Verify that calling start() twice is safe."""
         import sounddevice as sd
-
-        mock_loop = MagicMock()
+        mock_loop = self._mock_loop_with_closing_create_task()
         mock_get_loop.return_value = mock_loop
         playback = AudioPlayback()
         playback.start()
@@ -98,7 +109,7 @@ class TestAudioPlayback:
     @patch("voice_shell.src.audio.playback.asyncio.get_event_loop")
     def test_queue_chunk(self, mock_get_loop):
         """Verify that queue_chunk puts audio bytes in the async queue."""
-        mock_loop = MagicMock()
+        mock_loop = self._mock_loop_with_closing_create_task()
         mock_get_loop.return_value = mock_loop
         playback = AudioPlayback()
         playback.start()
@@ -122,8 +133,7 @@ class TestAudioPlayback:
     def test_context_manager(self, mock_get_loop):
         """Verify that AudioPlayback works as a context manager."""
         import sounddevice as sd
-
-        mock_loop = MagicMock()
+        mock_loop = self._mock_loop_with_closing_create_task()
         mock_get_loop.return_value = mock_loop
         with AudioPlayback() as playback:
             assert playback._running is True
