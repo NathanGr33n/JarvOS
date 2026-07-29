@@ -152,15 +152,8 @@ def parse_structured_tool_calls(text: str) -> list[ToolCall]:
     - {"tool_calls": [{...}, {...}]}
     """
 
-    raw = text.strip()
-    if not raw:
-        return []
-    if not raw.startswith("{") and not raw.startswith("["):
-        return []
-
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
+    payload = _parse_json_payload(text)
+    if payload is None:
         return []
 
     if isinstance(payload, dict) and "tool_calls" in payload:
@@ -181,23 +174,78 @@ def parse_structured_tool_calls(text: str) -> list[ToolCall]:
         tool_name = tool_name.strip()
 
         arg = _extract_argument(entry)
+        tool_name, arg = _normalize_tool_call(tool_name, arg)
         tool_calls.append(ToolCall(name=tool_name, argument=arg))
 
     return tool_calls
 
 
+def serialize_tool_call(call: ToolCall) -> dict[str, str]:
+    return {
+        "tool": call.name,
+        "argument": call.argument,
+    }
+
+
+def serialize_tool_calls(calls: list[ToolCall]) -> str:
+    return json.dumps({"tool_calls": [serialize_tool_call(call) for call in calls]})
+
+
+def _parse_json_payload(text: str) -> Any:
+    raw = text.strip()
+    if not raw:
+        return None
+
+    candidates = [raw]
+    if "```" in raw:
+        fence_matches = re.findall(r"```(?:json)?\s*([\s\S]*?)```", raw, flags=re.IGNORECASE)
+        for match in fence_matches:
+            candidate = match.strip()
+            if candidate:
+                candidates.append(candidate)
+
+    for candidate in candidates:
+        if not candidate.startswith("{") and not candidate.startswith("["):
+            continue
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
+def _normalize_tool_call(tool_name: str, argument: str) -> tuple[str, str]:
+    if tool_name == "app" and argument:
+        return f"app:{argument}", ""
+    return tool_name, argument
+
+
 def _extract_argument(entry: dict[str, Any]) -> str:
     argument = entry.get("argument")
-    if isinstance(argument, str):
-        return argument
+    if argument is not None:
+        return _serialize_argument(argument)
 
     arguments = entry.get("arguments") or entry.get("args")
-    if isinstance(arguments, str):
-        return arguments
+    if arguments is not None and not isinstance(arguments, dict):
+        return _serialize_argument(arguments)
     if isinstance(arguments, dict):
         for key in ("path", "app", "value", "text"):
             value = arguments.get(key)
-            if isinstance(value, str):
-                return value
+            if value is not None:
+                return _serialize_argument(value)
+        for value in arguments.values():
+            if value is not None:
+                return _serialize_argument(value)
 
     return ""
+
+
+def _serialize_argument(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if value is None:
+        return ""
+    return json.dumps(value)

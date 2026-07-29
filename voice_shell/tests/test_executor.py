@@ -1,3 +1,4 @@
+import time
 from voice_shell.src.actions.executor import ActionExecutor, ParsedAction
 from voice_shell.src.actions.registry import ActionRegistry, ActionResult
 
@@ -79,6 +80,9 @@ class TestActionExecutor:
         assert "[EXEC:time]" not in result.cleaned_response
         assert "The current time is shown." in result.cleaned_response
         assert "time" in result.action_result
+        assert len(result.action_reports) == 1
+        assert result.action_reports[0].action_name == "time"
+        assert result.action_reports[0].status == "ok"
 
     def test_parse_and_execute_no_actions(self):
         """Verify parse_and_execute with no action tags returns the original text."""
@@ -107,6 +111,65 @@ class TestActionExecutor:
         # nonexistent app should return an error from the registry handler
         result = executor.execute(ParsedAction("app:nonexistent_app_12345", ""))
         assert result.error is not None
+
+    def test_execute_timeout_returns_structured_error(self):
+        """Verify execute returns a timeout error when dispatch exceeds timeout."""
+        executor = ActionExecutor(execution_timeout_seconds=0.01)
+
+        def _slow_dispatch(_):
+            time.sleep(0.05)
+            return ActionResult(stdout="done")
+
+        executor.dispatcher.dispatch = _slow_dispatch
+        result = executor.execute(ParsedAction("time", ""))
+        assert result.error is not None
+        assert "timed out" in result.error
+
+    def test_execute_cancellation_returns_structured_error(self):
+        """Verify execute handles cancellation-like interrupts with a clear error."""
+        executor = ActionExecutor()
+
+        def _cancel_dispatch(_):
+            raise KeyboardInterrupt
+
+        executor.dispatcher.dispatch = _cancel_dispatch
+        result = executor.execute(ParsedAction("time", ""))
+        assert result.error is not None
+        assert "cancelled" in result.error.lower()
+
+    def test_execute_exception_returns_structured_error(self):
+        """Verify execute maps unexpected dispatcher errors into ActionResult.error."""
+        executor = ActionExecutor()
+
+        def _error_dispatch(_):
+            raise RuntimeError("boom")
+
+        executor.dispatcher.dispatch = _error_dispatch
+        result = executor.execute(ParsedAction("time", ""))
+        assert result.error is not None
+        assert "failed: boom" in result.error
+
+    def test_parse_and_execute_error_report_status(self):
+        """Verify parse_and_execute sets timeout/cancellation statuses in reports."""
+        executor = ActionExecutor()
+        sequence = iter(
+            [
+                ActionResult(error="Action 'time' timed out after 0.10s."),
+                ActionResult(error="Action 'date' cancelled before completion."),
+                ActionResult(error="Action 'ls' failed: boom"),
+            ]
+        )
+
+        executor.execute = lambda _: next(sequence)
+        result = executor.parse_and_execute(
+            "[EXEC:time] [EXEC:date] [EXEC:shell:ls]"
+        )
+
+        assert [report.status for report in result.action_reports] == [
+            "timeout",
+            "cancelled",
+            "error",
+        ]
 
     def test_cleaned_text_whitespace_normalized(self):
         """Verify that extra whitespace is normalized after tag removal."""

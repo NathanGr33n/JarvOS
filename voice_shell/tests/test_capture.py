@@ -221,6 +221,30 @@ class TestAudioCapture:
 
         asyncio.run(_test())
 
+    def test_capture_until_silence_cancellation_cleans_listening_state(self):
+        """Verify cancellation exits listening mode cleanly via the finally block."""
+        capture = AudioCapture()
+        capture.start()
+
+        mock_vad = MagicMock()
+        mock_vad.process.return_value = False
+        mock_vad.reset = MagicMock()
+
+        async def _test():
+            task = asyncio.create_task(
+                capture.capture_until_silence(mock_vad, max_duration=10.0)
+            )
+            await asyncio.sleep(0.02)
+            assert capture._is_listening is True
+
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert capture._is_listening is False
+
+        asyncio.run(_test())
+
     def test_capture_to_wav(self, tmp_path: Path):
         """Verify that capture_to_wav writes a valid WAV file."""
         import sounddevice as sd

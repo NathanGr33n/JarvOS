@@ -14,6 +14,7 @@ class DispatchPolicy:
     allow_confirm_required: bool = False
     allow_blocked: bool = False
     blocked_tools: set[str] = field(default_factory=set)
+    max_transient_retries: int = 1
 
 
 class ToolDispatcher:
@@ -28,6 +29,11 @@ class ToolDispatcher:
         self.registry = registry or ActionRegistry()
         self.schema = schema or ToolSchema()
         self.policy = policy or DispatchPolicy()
+        self._category_dispatchers = {
+            ToolCategory.FILESYSTEM: self._dispatch_filesystem,
+            ToolCategory.APPLICATION: self._dispatch_application,
+            ToolCategory.SYSTEM: self._dispatch_system,
+        }
 
     def dispatch(self, call: ToolCall) -> ActionResult:
         validation_error = self.schema.validate(call)
@@ -51,14 +57,10 @@ class ToolDispatcher:
         handler = self.registry.get(call.name)
         if handler is None:
             return ActionResult(error=f"Action '{call.name}' is not allowed.")
-        if definition.category == ToolCategory.FILESYSTEM:
-            return self._dispatch_filesystem(handler, call)
-        if definition.category == ToolCategory.APPLICATION:
-            return self._dispatch_application(handler, call)
-        if definition.category == ToolCategory.SYSTEM:
-            return self._dispatch_system(handler, call)
-
-        return ActionResult(error=f"Unsupported tool category for '{call.name}'.")
+        category_dispatcher = self._category_dispatchers.get(definition.category)
+        if category_dispatcher is None:
+            return ActionResult(error=f"Unsupported tool category for '{call.name}'.")
+        return self._dispatch_with_transient_retries(category_dispatcher, handler, call)
 
     def _dispatch_filesystem(self, handler, call: ToolCall) -> ActionResult:
         return handler(call.argument)
@@ -68,6 +70,41 @@ class ToolDispatcher:
 
     def _dispatch_system(self, handler, call: ToolCall) -> ActionResult:
         return handler(call.argument)
+
+    def _dispatch_with_transient_retries(self, dispatcher, handler, call: ToolCall) -> ActionResult:
+        retries = max(0, self.policy.max_transient_retries)
+        last_error: Optional[str] = None
+
+        for attempt in range(retries + 1):
+            try:
+                result = dispatcher(handler, call)
+            except OSError as exc:
+                last_error = f"Transient execution failure for '{call.name}': {exc}"
+                if attempt < retries and self._is_transient_error(last_error):
+                    continue
+                return ActionResult(error=last_error)
+
+            if result.error and attempt < retries and self._is_transient_error(result.error):
+                last_error = result.error
+                continue
+            return result
+
+        return ActionResult(error=last_error or f"Transient retries exhausted for '{call.name}'.")
+
+    @staticmethod
+    def _is_transient_error(error: str) -> bool:
+        normalized = error.lower()
+        transient_markers = (
+            "temporar",
+            "transient",
+            "timeout",
+            "timed out",
+            "try again",
+            "resource busy",
+            "eagain",
+            "unavailable",
+        )
+        return any(marker in normalized for marker in transient_markers)
 
     def _is_allowed_by_policy(self, safety_class: SafetyClass) -> bool:
         if safety_class == SafetyClass.SAFE_READ:

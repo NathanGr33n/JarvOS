@@ -2,6 +2,8 @@ from voice_shell.src.actions.schema import (
     ToolCall,
     ToolSchema,
     parse_structured_tool_calls,
+    serialize_tool_call,
+    serialize_tool_calls,
 )
 
 
@@ -26,6 +28,44 @@ class TestToolSchema:
     def test_parse_structured_ignores_non_json(self):
         calls = parse_structured_tool_calls("hello world")
         assert calls == []
+
+    def test_parse_structured_from_json_code_fence(self):
+        calls = parse_structured_tool_calls(
+            "Result:\n```json\n{\"tool\":\"time\"}\n```"
+        )
+        assert calls == [ToolCall(name="time", argument="")]
+
+    def test_parse_structured_normalizes_app_tool(self):
+        calls = parse_structured_tool_calls(
+            '{"tool":"app","arguments":{"app":"firefox"}}'
+        )
+        assert calls == [ToolCall(name="app:firefox", argument="")]
+
+    def test_parse_structured_serializes_non_string_argument(self):
+        calls = parse_structured_tool_calls('{"tool":"cat","argument":123}')
+        assert calls == [ToolCall(name="cat", argument="123")]
+
+    def test_parse_structured_serializes_dict_argument_fallback(self):
+        calls = parse_structured_tool_calls(
+            '{"tool":"cat","arguments":{"unknown":{"k":"v"}}}'
+        )
+        assert calls == [ToolCall(name="cat", argument='{"k": "v"}')]
+
+    def test_serialize_single_tool_call(self):
+        serialized = serialize_tool_call(ToolCall(name="cat", argument="/tmp/a.txt"))
+        assert serialized == {"tool": "cat", "argument": "/tmp/a.txt"}
+
+    def test_serialize_tool_calls_wrapper(self):
+        serialized = serialize_tool_calls(
+            [
+                ToolCall(name="time", argument=""),
+                ToolCall(name="app:firefox", argument=""),
+            ]
+        )
+        assert (
+            serialized
+            == '{"tool_calls": [{"tool": "time", "argument": ""}, {"tool": "app:firefox", "argument": ""}]}'
+        )
 
     def test_validate_known_safe_tool(self):
         schema = ToolSchema()
