@@ -101,7 +101,7 @@ class TestAudioCapture:
         callback(fake_data, 512, {}, None)
 
         # Drain the queue in the event loop
-        chunk = asyncio.get_event_loop().run_until_complete(capture.get_chunk())
+        chunk = asyncio.run(capture.get_chunk())
         assert chunk == fake_data.tobytes()
 
     def test_callback_accumulates_in_listening_mode(self):
@@ -186,7 +186,7 @@ class TestAudioCapture:
             assert audio == fake_data.tobytes() * 3
             mock_vad.reset.assert_called_once()
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_capture_until_silence_timeout(self):
         """Verify that capture_until_silence stops at max_duration."""
@@ -219,7 +219,7 @@ class TestAudioCapture:
             assert elapsed < 0.3
             mock_vad.reset.assert_called_once()
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_capture_to_wav(self, tmp_path: Path):
         """Verify that capture_to_wav writes a valid WAV file."""
@@ -256,7 +256,7 @@ class TestAudioCapture:
                 assert wav.getsampwidth() == 2
                 assert wav.getframerate() == 16000
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     def test_context_manager(self):
         """Verify that AudioCapture works as a context manager."""

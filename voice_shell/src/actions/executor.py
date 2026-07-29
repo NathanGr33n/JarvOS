@@ -1,61 +1,59 @@
 import re
 from typing import NamedTuple, Optional
 
+from .dispatcher import ToolDispatcher
 from .registry import ActionRegistry, ActionResult
+from .schema import ToolCall, ToolSchema, parse_structured_tool_calls
 
 
 class ParsedAction(NamedTuple):
-    """Result of parsing an action tag from an LLM response."""
+    """Result of parsing an action tag or structured tool call."""
+
     action_name: str
     argument: str = ""
 
 
 class ExecutionResult(NamedTuple):
     """Result of executing an action and cleaning the LLM response."""
+
     cleaned_response: str
     action_result: str = ""
 
 
 class ActionExecutor:
-    """Parses action tags from LLM responses and executes whitelisted actions.
+    """Parses action calls from LLM responses and executes whitelisted actions.
 
-    Action tags follow the pattern ``[EXEC:<type>:<action>[:<arg>]]``.
-    Examples:
-    - ``[EXEC:shell:ls]`` → execute ``ls -la``
-    - ``[EXEC:shell:cat /path/to/file]`` → read file
-    - ``[EXEC:app:firefox]`` → launch application
-    - ``[EXEC:time]`` → return current time
-
-    Tags are stripped from the spoken response so the user does not hear them.
+    Phase 2 foundation:
+    - Prefer structured JSON tool calls (schema-validated).
+    - Keep legacy ``[EXEC:...]`` tags as migration compatibility.
     """
 
-    # Regex pattern for action tags: [EXEC:category:action[:argument]]
+    # Legacy regex pattern for action tags: [EXEC:category:action[:argument]]
     _ACTION_TAG_PATTERN = re.compile(
         r"\[EXEC:(?P<category>shell|app):(?P<action>[^\]: ]+)(?:[ :](?P<arg>[^\]]*))?\]"
     )
 
-    # Standalone commands (no arguments)
+    # Legacy standalone commands (no arguments)
     _STANDALONE_PATTERN = re.compile(r"\[EXEC:(?P<action>time|date)\]")
 
     def __init__(self, registry: Optional[ActionRegistry] = None):
-        """Initialize the executor with an action registry.
-
-        Args:
-            registry: The ``ActionRegistry`` to use for looking up and executing
-                actions. If ``None``, a default registry is created.
-        """
         self.registry = registry or ActionRegistry()
+        self.schema = ToolSchema()
+        self.dispatcher = ToolDispatcher(
+            registry=self.registry,
+            schema=self.schema,
+        )
 
     def parse_actions(self, text: str) -> list[ParsedAction]:
-        """Extract all action tags from the LLM response text.
+        """Extract actions from JSON tool payloads or legacy action tags."""
 
-        Args:
-            text: The raw LLM response containing action tags.
+        actions: list[ParsedAction] = []
 
-        Returns:
-            A list of ``ParsedAction`` tuples.
-        """
-        actions = []
+        structured_calls = parse_structured_tool_calls(text)
+        if structured_calls:
+            for call in structured_calls:
+                actions.append(ParsedAction(call.name, call.argument))
+            return actions
 
         for match in self._ACTION_TAG_PATTERN.finditer(text):
             category = match.group("category")
@@ -70,29 +68,15 @@ class ActionExecutor:
         return actions
 
     def execute(self, parsed: ParsedAction) -> ActionResult:
-        """Execute a single parsed action if it is whitelisted.
+        """Execute a parsed action through the policy-aware dispatcher."""
 
-        Args:
-            parsed: The parsed action to execute.
-
-        Returns:
-            An ``ActionResult`` with ``stdout`` or ``error`` set.
-        """
-        handler = self.registry.get(parsed.action_name)
-        if handler is None:
-            return ActionResult(error=f"Action '{parsed.action_name}' is not allowed.")
-        return handler(parsed.argument)
+        return self.dispatcher.dispatch(
+            ToolCall(name=parsed.action_name, argument=parsed.argument)
+        )
 
     def parse_and_execute(self, text: str) -> ExecutionResult:
-        """Parse action tags from the text, execute them, and return a cleaned response.
+        """Parse actions from text, execute them, and return cleaned response."""
 
-        Args:
-            text: The raw LLM response text.
-
-        Returns:
-            An ``ExecutionResult`` with the cleaned response (action tags removed)
-            and a concatenated string of action results.
-        """
         actions = self.parse_actions(text)
         cleaned = self._strip_tags(text)
 
@@ -110,9 +94,12 @@ class ActionExecutor:
         )
 
     def _strip_tags(self, text: str) -> str:
-        """Remove all action tags from the text."""
+        """Remove legacy action tags from text.
+
+        Structured JSON payloads are not altered by this method.
+        """
+
         text = self._ACTION_TAG_PATTERN.sub("", text)
         text = self._STANDALONE_PATTERN.sub("", text)
-        # Clean up extra whitespace left behind
         text = re.sub(r"\s{2,}", " ", text)
         return text.strip()

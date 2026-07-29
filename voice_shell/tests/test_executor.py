@@ -40,6 +40,13 @@ class TestActionExecutor:
         assert len(actions) == 1
         assert actions[0] == ParsedAction("date", "")
 
+    def test_parse_structured_tool_call(self):
+        """Verify parsing of a structured JSON tool call."""
+        executor = ActionExecutor()
+        actions = executor.parse_actions('{"tool":"cat","argument":"/tmp/a.txt"}')
+        assert len(actions) == 1
+        assert actions[0] == ParsedAction("cat", "/tmp/a.txt")
+
     def test_parse_multiple_actions(self):
         """Verify parsing of multiple actions in one response."""
         text = "[EXEC:shell:ls] Then [EXEC:app:firefox] and [EXEC:time]"
