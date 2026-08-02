@@ -100,7 +100,7 @@ class TestAudioCapture:
         fake_data = np.zeros((512, 1), dtype=np.int16)
         callback(fake_data, 512, {}, None)
 
-        # Drain the queue in the event loop
+        # Drain the queue in an isolated event loop
         chunk = asyncio.run(capture.get_chunk())
         assert chunk == fake_data.tobytes()
 

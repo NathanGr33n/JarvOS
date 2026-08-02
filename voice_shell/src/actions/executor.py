@@ -1,3 +1,4 @@
+import json
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Literal, NamedTuple, Optional
@@ -85,6 +86,43 @@ class ActionExecutor:
 
         return actions
 
+    def parse_structured_actions(self, text: str) -> tuple[list[ParsedAction], Optional[str]]:
+        """Parse JSON action payloads from model output.
+
+        Supported payload shape:
+        {
+          "response": "Human-friendly response text",
+          "actions": [
+            {"name": "ls", "arg": "/tmp"},
+            {"name": "app:firefox"}
+          ]
+        }
+        """
+        payload = self._extract_action_payload(text)
+        if payload is None:
+            return [], None
+
+        raw_actions = payload.get("actions", [])
+        if not isinstance(raw_actions, list):
+            return [], payload.get("response")
+
+        parsed_actions: list[ParsedAction] = []
+        for item in raw_actions:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            arg = item.get("arg", "")
+            if not isinstance(name, str):
+                continue
+            if not isinstance(arg, str):
+                arg = str(arg)
+            parsed_actions.append(ParsedAction(name.strip(), arg.strip()))
+
+        response = payload.get("response")
+        if response is not None and not isinstance(response, str):
+            response = str(response)
+        return parsed_actions, response
+
     def execute(self, parsed: ParsedAction) -> ActionResult:
         """Execute a parsed action through the policy-aware dispatcher."""
 
@@ -108,10 +146,21 @@ class ActionExecutor:
                 return ActionResult(error=f"Action '{parsed.action_name}' failed: {exc}")
 
     def parse_and_execute(self, text: str) -> ExecutionResult:
-        """Parse actions from text, execute them, and return cleaned response."""
+        """Parse actions from text, execute them, and return cleaned response.
 
-        actions = self.parse_actions(text)
-        cleaned = self._strip_tags(text)
+        Args:
+            text: The raw LLM response text.
+
+        Returns:
+            An ``ExecutionResult`` with the cleaned response (action tags removed),
+            concatenated action results, and structured per-action reports.
+        """
+        actions, structured_response = self.parse_structured_actions(text)
+        if actions:
+            cleaned = (structured_response or "").strip()
+        else:
+            actions = self.parse_actions(text)
+            cleaned = self._strip_tags(text)
 
         results: list[str] = []
         reports: list[ActionExecutionReport] = []
@@ -162,6 +211,26 @@ class ActionExecutor:
             action_result="\n".join(results),
             action_reports=tuple(reports),
         )
+
+    def _extract_action_payload(self, text: str) -> Optional[dict]:
+        """Extract and decode a JSON action payload if present."""
+        text = text.strip()
+        if not text:
+            return None
+
+        candidates: list[str] = [text]
+        fenced_match = re.search(r"```json\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+        if fenced_match:
+            candidates.insert(0, fenced_match.group(1))
+
+        for candidate in candidates:
+            try:
+                decoded = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(decoded, dict) and "actions" in decoded:
+                return decoded
+        return None
 
     def _strip_tags(self, text: str) -> str:
         """Remove legacy action tags from text.

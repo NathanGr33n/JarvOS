@@ -91,6 +91,35 @@ class TestActionExecutor:
         assert result.cleaned_response == "Hello, I am Nova."
         assert result.action_result == ""
 
+    def test_parse_structured_actions_json_object(self):
+        """Verify JSON payload actions are parsed with response text."""
+        executor = ActionExecutor()
+        payload = """
+{
+  "response": "Listing your files now.",
+  "actions": [
+    {"name": "ls", "arg": "."},
+    {"name": "time"}
+  ]
+}
+"""
+        actions, response = executor.parse_structured_actions(payload)
+        assert response == "Listing your files now."
+        assert actions == [ParsedAction("ls", "."), ParsedAction("time", "")]
+
+    def test_parse_and_execute_structured_payload(self):
+        """Verify structured payload is executed and cleaned response comes from response field."""
+        executor = ActionExecutor()
+        payload = """
+{
+  "response": "Checking current folder.",
+  "actions": [{"name": "pwd"}]
+}
+"""
+        result = executor.parse_and_execute(payload)
+        assert result.cleaned_response == "Checking current folder."
+        assert "pwd" in result.action_result
+
     def test_execute_allowed_action(self):
         """Verify that executing an allowed action returns a result."""
         executor = ActionExecutor()
