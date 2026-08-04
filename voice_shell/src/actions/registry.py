@@ -1,6 +1,7 @@
 import os
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 
@@ -23,6 +24,12 @@ def _resolve_existing_path(path: str) -> tuple[Optional[str], Optional[str]]:
     return normalized, None
 
 
+def _truncate(text: str, limit: int = 4000) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}\n...[truncated]"
+
+
 def _action_ls(path: str = "") -> ActionResult:
     """Execute ``ls -la`` in the current or requested directory."""
     target, error = _resolve_existing_path(path)
@@ -38,11 +45,8 @@ def _action_ls(path: str = "") -> ActionResult:
         text=True,
         check=False,
     )
-    stdout = result.stdout.strip()
-    if len(stdout) > 4000:
-        stdout = f"{stdout[:4000]}\n...[truncated]"
     return ActionResult(
-        stdout=stdout,
+        stdout=_truncate(result.stdout.strip()),
         stderr=result.stderr.strip(),
         returncode=result.returncode,
     )
@@ -63,11 +67,8 @@ def _action_cat(filepath: str) -> ActionResult:
         text=True,
         check=False,
     )
-    stdout = result.stdout.strip()
-    if len(stdout) > 4000:
-        stdout = f"{stdout[:4000]}\n...[truncated]"
     return ActionResult(
-        stdout=stdout,
+        stdout=_truncate(result.stdout.strip()),
         stderr=result.stderr.strip(),
         returncode=result.returncode,
     )
@@ -88,6 +89,7 @@ def _action_cd(path: str) -> ActionResult:
     except OSError as exc:
         return ActionResult(error=f"Cannot change directory to {target}: {exc}")
 
+
 def _action_pwd(_: str = "") -> ActionResult:
     """Return the current working directory."""
     return ActionResult(stdout=os.getcwd())
@@ -107,6 +109,88 @@ def _action_date(_: str = "") -> ActionResult:
     )
 
 
+def _action_search_files(argument: str) -> ActionResult:
+    """Search for files by name under a root directory.
+
+    Argument formats:
+    - ``query``
+    - ``query|/path/to/root``
+    """
+    raw = (argument or "").strip()
+    if not raw:
+        return ActionResult(error="search_files requires a query.")
+
+    if "|" in raw:
+        query, root = raw.split("|", 1)
+    else:
+        query, root = raw, "."
+
+    query = query.strip()
+    root = root.strip() or "."
+    if not query:
+        return ActionResult(error="search_files requires a non-empty query.")
+
+    target, error = _resolve_existing_path(root)
+    if error:
+        return ActionResult(error=error)
+    if target is None:
+        return ActionResult(error="Path validation failed for search_files.")
+    if not os.path.isdir(target):
+        return ActionResult(error=f"Not a directory: {target}")
+
+    matches: List[str] = []
+    root_path = Path(target)
+    query_lower = query.lower()
+    try:
+        for path in root_path.rglob("*"):
+            if query_lower in path.name.lower():
+                matches.append(str(path))
+                if len(matches) >= 50:
+                    break
+    except OSError as exc:
+        return ActionResult(error=f"Search failed under {target}: {exc}")
+
+    if not matches:
+        return ActionResult(stdout=f"No matches for '{query}' under {target}")
+    return ActionResult(stdout=_truncate("\n".join(matches)))
+
+
+def _action_get_battery_status(_: str = "") -> ActionResult:
+    """Return battery status from sysfs when available."""
+    power_supply = Path("/sys/class/power_supply")
+    if not power_supply.exists():
+        return ActionResult(error="Battery information is not available on this system.")
+
+    batteries = sorted(
+        entry for entry in power_supply.iterdir()
+        if entry.is_dir() and (
+            (entry / "type").exists() and (entry / "type").read_text(encoding="utf-8").strip() == "Battery"
+            or entry.name.lower().startswith("bat")
+        )
+    )
+    if not batteries:
+        return ActionResult(error="No battery device found.")
+
+    battery = batteries[0]
+    capacity_path = battery / "capacity"
+    status_path = battery / "status"
+
+    parts: List[str] = []
+    try:
+        if capacity_path.exists():
+            capacity = capacity_path.read_text(encoding="utf-8").strip()
+            parts.append(f"{capacity}%")
+        if status_path.exists():
+            status = status_path.read_text(encoding="utf-8").strip()
+            parts.append(status)
+    except OSError as exc:
+        return ActionResult(error=f"Unable to read battery status: {exc}")
+
+    if not parts:
+        return ActionResult(error="Battery status files are incomplete.")
+    return ActionResult(stdout=" ".join(parts))
+
+
 def _action_launch_app(name: str) -> ActionResult:
     """Launch an application by name."""
     try:
@@ -123,6 +207,19 @@ class ActionRegistry:
     ``ActionResult``. The registry validates the action name before execution.
     """
 
+    DEFAULT_SHELL_COMMANDS = [
+        "ls",
+        "cat",
+        "pwd",
+        "date",
+        "cd",
+        "time",
+        "list_directory",
+        "read_file",
+        "search_files",
+        "get_battery_status",
+    ]
+
     def __init__(
         self,
         allowed_shell_commands: Optional[List[str]] = None,
@@ -135,7 +232,9 @@ class ActionRegistry:
             allowed_apps: List of permitted application names (e.g., ``["firefox"]``).
         """
         self.allowed_shell_commands = set(
-            allowed_shell_commands if allowed_shell_commands is not None else ["ls", "cat", "pwd", "date", "cd", "time"]
+            allowed_shell_commands
+            if allowed_shell_commands is not None
+            else list(self.DEFAULT_SHELL_COMMANDS)
         )
         self.allowed_apps = set(
             allowed_apps if allowed_apps is not None else ["firefox", "nautilus", "code", "terminal"]
@@ -148,8 +247,14 @@ class ActionRegistry:
         """Populate the internal registry with safe, whitelisted actions."""
         if "ls" in self.allowed_shell_commands:
             self._registry["ls"] = _action_ls
+        if "list_directory" in self.allowed_shell_commands:
+            self._registry["list_directory"] = _action_ls
         if "cat" in self.allowed_shell_commands:
             self._registry["cat"] = _action_cat
+        if "read_file" in self.allowed_shell_commands:
+            self._registry["read_file"] = _action_cat
+        if "search_files" in self.allowed_shell_commands:
+            self._registry["search_files"] = _action_search_files
         if "cd" in self.allowed_shell_commands:
             self._registry["cd"] = _action_cd
         if "pwd" in self.allowed_shell_commands:
@@ -158,6 +263,8 @@ class ActionRegistry:
             self._registry["date"] = _action_date
         if "time" in self.allowed_shell_commands:
             self._registry["time"] = _action_time
+        if "get_battery_status" in self.allowed_shell_commands:
+            self._registry["get_battery_status"] = _action_get_battery_status
 
         for app in self.allowed_apps:
             self._registry[f"app:{app}"] = self._make_app_launcher(app)
