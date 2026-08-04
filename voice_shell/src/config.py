@@ -88,6 +88,19 @@ class MemoryConfig:
 
 
 @dataclass
+class ServicesConfig:
+    """Optional local process supervision for engine binaries."""
+    manage_whisper: bool = False
+    manage_llama: bool = False
+    ready_timeout: float = 30.0
+    whisper_command: list = field(default_factory=list)
+    llama_command: list = field(default_factory=list)
+    whisper_health_url: Optional[str] = None
+    llama_health_url: Optional[str] = None
+    autostart: bool = False
+
+
+@dataclass
 class Config:
     audio: AudioConfig = field(default_factory=AudioConfig)
     wake_word: WakeWordConfig = field(default_factory=WakeWordConfig)
@@ -97,6 +110,7 @@ class Config:
     actions: ActionsConfig = field(default_factory=ActionsConfig)
     hud: HUDConfig = field(default_factory=HUDConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    services: ServicesConfig = field(default_factory=ServicesConfig)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
@@ -128,4 +142,5 @@ class Config:
             actions=_from_dict(raw.get("actions", {}), ActionsConfig),
             hud=_from_dict(raw.get("hud", {}), HUDConfig),
             memory=_from_dict(raw.get("memory", {}), MemoryConfig),
+            services=_from_dict(raw.get("services", {}), ServicesConfig),
         )

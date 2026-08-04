@@ -1,0 +1,4 @@
+[Unit]
+Description=JarvOS Voice-Native Session Stack
+Wants=jarvos-whisper.service jarvos-llama.service jarvos-voice-shell.service
+After=jarvos-whisper.service jarvos-llama.service jarvos-voice-shell.service

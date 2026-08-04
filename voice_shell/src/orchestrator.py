@@ -19,6 +19,7 @@ from .actions.executor import ActionExecutor
 from .actions.registry import ActionRegistry
 from .actions.schemas import render_tool_schema_prompt
 from .memory import MemoryStore
+from .services import ServiceManager
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +138,16 @@ class Orchestrator:
         self._last_transcript: str = ""
         self._last_response: str = ""
 
+        # Optional local engine supervision (dev fallback; systemd preferred)
+        self.service_manager = ServiceManager.from_config(self.config)
+
     async def run(self) -> None:
         """Run the main voice shell loop until ``stop()`` is called."""
         self.running = True
+        if self.config.services.autostart:
+            statuses = await asyncio.to_thread(self.service_manager.start_all, True)
+            for name, status in statuses.items():
+                logger.info("Service %s status: %s", name, status.value)
         self.audio_capture.start()
         self.audio_playback.start()
         self.wwd.start()
@@ -174,6 +182,8 @@ class Orchestrator:
         await self.stt.close()
         await self.llm.close()
         self.memory.close()
+        if self.config.services.autostart:
+            await asyncio.to_thread(self.service_manager.stop_all)
 
     async def _transition_to(self, new_state: State) -> None:
         """Log and switch to a new operational state."""
