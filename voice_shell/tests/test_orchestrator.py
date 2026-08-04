@@ -11,7 +11,14 @@ class TestOrchestrator:
     """Tests for the Orchestrator state machine and pipeline integration."""
 
     @pytest.fixture
-    def orchestrator(self):
+    def orchestrator(self, tmp_path):
+        from voice_shell.src.config import Config
+
+        config = Config()
+        config.memory.enabled = True
+        config.memory.db_path = str(tmp_path / "test_memory.db")
+        config.memory.history_limit = 3
+
         with patch("voice_shell.src.orchestrator.AudioCapture") as MockCapture, \
              patch("voice_shell.src.orchestrator.AudioPlayback") as MockPlayback, \
              patch("voice_shell.src.orchestrator.VoiceActivityDetector") as MockVad, \
@@ -21,8 +28,9 @@ class TestOrchestrator:
              patch("voice_shell.src.orchestrator.TTSClient") as MockTts, \
              patch("voice_shell.src.orchestrator.ActionExecutor") as MockExecutor:
 
-            orch = Orchestrator()
+            orch = Orchestrator(config=config)
             yield orch
+            orch.memory.close()
 
     def test_init_default_config(self, orchestrator):
         """Verify the orchestrator initializes with default config and IDLE state."""
@@ -36,6 +44,7 @@ class TestOrchestrator:
         """Verify the default system prompt is set."""
         assert "Nova" in orchestrator.system_prompt
         assert "respond in JSON with keys response and actions" in orchestrator.system_prompt
+        assert "Tool catalog:" in orchestrator.system_prompt
 
     def test_repr(self, orchestrator):
         """Verify the repr shows the state and running flag."""
