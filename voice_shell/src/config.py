@@ -95,6 +95,21 @@ class MemoryConfig:
 
 
 @dataclass
+class HealthConfig:
+    """Startup and pre-listen engine readiness gates."""
+    enabled: bool = True
+    require_stt: bool = True
+    require_llm: bool = True
+    require_tts: bool = True
+    startup_timeout: float = 60.0
+    poll_interval: float = 1.0
+    # If True, refuse IDLE->LISTENING while required engines are down.
+    block_listening: bool = True
+    # If True, stop the orchestrator when startup health wait times out.
+    fail_fast: bool = False
+
+
+@dataclass
 class ServicesConfig:
     """Optional local process supervision for engine binaries."""
     manage_whisper: bool = False
@@ -118,6 +133,7 @@ class Config:
     hud: HUDConfig = field(default_factory=HUDConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     services: ServicesConfig = field(default_factory=ServicesConfig)
+    health: HealthConfig = field(default_factory=HealthConfig)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
@@ -150,4 +166,5 @@ class Config:
             hud=_from_dict(raw.get("hud", {}), HUDConfig),
             memory=_from_dict(raw.get("memory", {}), MemoryConfig),
             services=_from_dict(raw.get("services", {}), ServicesConfig),
+            health=_from_dict(raw.get("health", {}), HealthConfig),
         )
