@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -32,6 +33,13 @@ class TTSClient:
         self.model_path = Path(model_path)
         self.speaker_id = speaker_id
         self.binary_path = Path(binary_path)
+
+    def health_check(self) -> bool:
+        """Return True when the Piper binary and model path look usable."""
+        binary_ok = self.binary_path.exists() or shutil.which(str(self.binary_path)) is not None
+        model_ok = self.model_path.exists()
+        return bool(binary_ok and model_ok)
+
 
     def synthesize(self, text: str) -> bytes:
         """Synthesize a single block of text into raw PCM audio bytes.
