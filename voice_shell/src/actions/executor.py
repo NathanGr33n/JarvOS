@@ -1,8 +1,9 @@
 import re
 import json
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Set
 
 from .registry import ActionRegistry, ActionResult
+from .schemas import action_requires_confirmation, validate_action
 
 
 class ParsedAction(NamedTuple):
@@ -28,6 +29,7 @@ class ActionExecutor:
     - ``[EXEC:time]`` → return current time
 
     Tags are stripped from the spoken response so the user does not hear them.
+    Structured JSON payloads are preferred in Phase 2.
     """
 
     # Regex pattern for action tags: [EXEC:category:action[:argument]]
@@ -38,14 +40,28 @@ class ActionExecutor:
     # Standalone commands (no arguments)
     _STANDALONE_PATTERN = re.compile(r"\[EXEC:(?P<action>time|date)\]")
 
-    def __init__(self, registry: Optional[ActionRegistry] = None):
+    def __init__(
+        self,
+        registry: Optional[ActionRegistry] = None,
+        require_confirmation: bool = False,
+        confirmed_actions: Optional[Set[str]] = None,
+    ):
         """Initialize the executor with an action registry.
 
         Args:
             registry: The ``ActionRegistry`` to use for looking up and executing
                 actions. If ``None``, a default registry is created.
+            require_confirmation: When True, sensitive actions are blocked unless
+                present in ``confirmed_actions``.
+            confirmed_actions: Action names the user has already confirmed.
         """
         self.registry = registry or ActionRegistry()
+        self.require_confirmation = require_confirmation
+        self.confirmed_actions: Set[str] = set(confirmed_actions or set())
+
+    def confirm_action(self, action_name: str) -> None:
+        """Mark an action name as user-confirmed for this session."""
+        self.confirmed_actions.add(action_name)
 
     def parse_actions(self, text: str) -> list[ParsedAction]:
         """Extract all action tags from the LLM response text.
@@ -116,9 +132,26 @@ class ActionExecutor:
         Returns:
             An ``ActionResult`` with ``stdout`` or ``error`` set.
         """
+        schema_error = validate_action(parsed.action_name, parsed.argument)
+        if schema_error:
+            return ActionResult(error=schema_error)
+
         handler = self.registry.get(parsed.action_name)
         if handler is None:
             return ActionResult(error=f"Action '{parsed.action_name}' is not allowed.")
+
+        if (
+            self.require_confirmation
+            and action_requires_confirmation(parsed.action_name)
+            and parsed.action_name not in self.confirmed_actions
+        ):
+            return ActionResult(
+                error=(
+                    f"Action '{parsed.action_name}' requires confirmation. "
+                    "Ask the user to confirm, then retry."
+                )
+            )
+
         return handler(parsed.argument)
 
     def parse_and_execute(self, text: str) -> ExecutionResult:
@@ -150,6 +183,7 @@ class ActionExecutor:
             cleaned_response=cleaned.strip(),
             action_result="\n".join(results),
         )
+
     def _extract_action_payload(self, text: str) -> Optional[dict]:
         """Extract and decode a JSON action payload if present."""
         text = text.strip()
