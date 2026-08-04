@@ -57,7 +57,20 @@ class TTSConfig:
 
 @dataclass
 class ActionsConfig:
-    allowed_shell_commands: list = field(default_factory=lambda: ["ls", "cat", "pwd", "date"])
+    allowed_shell_commands: list = field(
+        default_factory=lambda: [
+            "ls",
+            "cat",
+            "pwd",
+            "date",
+            "cd",
+            "time",
+            "list_directory",
+            "read_file",
+            "search_files",
+            "get_battery_status",
+        ]
+    )
     allowed_apps: list = field(default_factory=lambda: ["firefox", "nautilus", "code", "terminal"])
     require_confirmation: bool = False
 
@@ -65,6 +78,13 @@ class ActionsConfig:
 class HUDConfig:
     enabled: bool = True
     show_timestamps: bool = True
+
+
+@dataclass
+class MemoryConfig:
+    enabled: bool = True
+    db_path: str = "data/memory.db"
+    history_limit: int = 3
 
 
 @dataclass
@@ -76,6 +96,7 @@ class Config:
     tts: TTSConfig = field(default_factory=TTSConfig)
     actions: ActionsConfig = field(default_factory=ActionsConfig)
     hud: HUDConfig = field(default_factory=HUDConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
     @classmethod
     def from_yaml(cls, path: Path) -> "Config":
@@ -106,4 +127,5 @@ class Config:
             tts=_from_dict(raw.get("tts", {}), TTSConfig),
             actions=_from_dict(raw.get("actions", {}), ActionsConfig),
             hud=_from_dict(raw.get("hud", {}), HUDConfig),
+            memory=_from_dict(raw.get("memory", {}), MemoryConfig),
         )
