@@ -78,6 +78,13 @@ class ActionsConfig:
 class HUDConfig:
     enabled: bool = True
     show_timestamps: bool = True
+    # text | floating | both
+    mode: str = "both"
+    width: int = 480
+    height: int = 140
+    anchor: str = "top-center"
+    margin: int = 24
+    opacity: float = 0.92
 
 
 @dataclass

@@ -71,13 +71,32 @@ This uses the in-process/service-manager path without requiring installed units.
 
 ---
 
-## 5. Wayland HUD roadmap (later Phase 3)
+## 5. Floating Wayland HUD
 
-- Minimal wlroots/dwl-based compositor or layer-shell overlay on an existing compositor.
-- Floating voice bar: state chip, last transcript, last response, action toast.
-- Global hotkey remains available as wake fallback.
+### 5.1 Current implementation
+- `voice_shell/src/hud/floating.py` — GTK4 floating voice bar
+- Optional `gtk4-layer-shell` top overlay when available
+- Fallback: undecorated always-on-top window (X11 / generic Wayland)
+- Modes via `hud.mode`: `text`, `floating`, `both` (default)
+- Events: state chip, transcript, response, action/error toast
+- Thread-safe updates via GLib idle dispatch so the async orchestrator can emit freely
 
-Not implemented in the foundation slice.
+### 5.2 Config
+```yaml
+hud:
+  enabled: true
+  mode: both
+  width: 480
+  height: 140
+  anchor: top-center
+  margin: 24
+  opacity: 0.92
+```
+
+### 5.3 Later roadmap
+- Dedicated wlroots/dwl-based compositor shell
+- Richer visual action feedback and animation
+- Global hotkey remains available as wake fallback
 
 ---
 
@@ -102,6 +121,7 @@ ResearchDesign/
 - Config exposes service supervision settings.
 - Tests cover manager lifecycle without requiring real model binaries.
 - README marks Phase 3 as in progress (foundation).
+- Floating HUD module ships with text/floating/both modes and unit tests.
 
 ---
 
