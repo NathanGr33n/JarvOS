@@ -167,3 +167,24 @@ class TestMemoryConfig:
         assert cfg.memory.enabled is False
         assert cfg.memory.db_path == "custom.db"
         assert cfg.memory.history_limit == 5
+
+
+class TestHUDConfig:
+    def test_hud_defaults_include_floating_settings(self):
+        from voice_shell.src.config import Config
+        cfg = Config()
+        assert cfg.hud.mode == "both"
+        assert cfg.hud.width == 480
+        assert cfg.hud.anchor == "top-center"
+
+    def test_hud_from_yaml(self, tmp_path):
+        from voice_shell.src.config import Config
+        path = tmp_path / "cfg.yaml"
+        path.write_text(
+            "hud:\n  mode: floating\n  width: 320\n  anchor: bottom-right\n  opacity: 0.8\n"
+        )
+        cfg = Config.from_yaml(path)
+        assert cfg.hud.mode == "floating"
+        assert cfg.hud.width == 320
+        assert cfg.hud.anchor == "bottom-right"
+        assert cfg.hud.opacity == 0.8
