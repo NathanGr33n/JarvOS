@@ -7,3 +7,6 @@ aiohttp>=3.9.0
 pyyaml>=6.0.1
 pvporcupine>=3.0.0
 pynput>=1.7.6
+# Optional for floating HUD (often system-provided): PyGObject / python3-gi, GTK4
+# sudo apt install python3-gi gir1.2-gtk-4.0
+# Optional Wayland overlay: gir1.2-gtk4layershell-1.0 or equivalent
