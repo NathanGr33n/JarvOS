@@ -1,0 +1,20 @@
+[Unit]
+Description=JarvOS llama.cpp LLM Server
+After=network-online.target
+Wants=network-online.target
+PartOf=jarvos.target
+
+[Service]
+Type=simple
+Environment=JARVOS_LLAMA_BIN=%h/.local/bin/llama-server
+Environment=JARVOS_LLAMA_MODEL=%h/.local/share/jarvos/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+Environment=JARVOS_LLAMA_HOST=127.0.0.1
+Environment=JARVOS_LLAMA_PORT=8082
+Environment=JARVOS_LLAMA_THREADS=4
+Environment=JARVOS_LLAMA_CTX=4096
+ExecStart=/bin/sh -c '"${JARVOS_LLAMA_BIN}" -m "${JARVOS_LLAMA_MODEL}" --host "${JARVOS_LLAMA_HOST}" --port "${JARVOS_LLAMA_PORT}" -c "${JARVOS_LLAMA_CTX}" --threads "${JARVOS_LLAMA_THREADS}" --n-predict 512'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=jarvos.target
