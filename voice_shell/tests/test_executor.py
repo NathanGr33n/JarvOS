@@ -137,3 +137,30 @@ class TestActionExecutor:
         cleaned = executor._strip_tags(text)
         assert "  " not in cleaned
         assert "Done." in cleaned
+
+class TestConfirmationAndSchema:
+    """Phase 2 confirmation and schema validation behavior."""
+
+    def test_confirmation_blocks_app_launch(self):
+        executor = ActionExecutor(require_confirmation=True)
+        result = executor.execute(ParsedAction("app:firefox", ""))
+        assert result.error is not None
+        assert "confirmation" in result.error
+
+    def test_confirmation_allows_after_confirm(self):
+        executor = ActionExecutor(require_confirmation=True)
+        executor.confirm_action("app:firefox")
+        # May fail to launch binary, but must not fail for confirmation.
+        result = executor.execute(ParsedAction("app:firefox", ""))
+        assert result.error is None or "Cannot launch" in (result.error or "")
+
+    def test_schema_rejects_missing_required_arg(self):
+        executor = ActionExecutor()
+        result = executor.execute(ParsedAction("cat", ""))
+        assert result.error is not None
+        assert "requires argument" in result.error
+
+    def test_non_sensitive_action_without_confirmation(self):
+        executor = ActionExecutor(require_confirmation=True)
+        result = executor.execute(ParsedAction("time", ""))
+        assert result.error is None
