@@ -130,3 +130,10 @@ class TestTTSClient:
         assert "TTSClient" in r
         assert "voice.onnx" in r
         assert "speaker=1" in r
+
+
+class TestTTSHealthCheck:
+    def test_health_check_false_when_missing(self, tmp_path):
+        from voice_shell.src.engines.tts import TTSClient
+        client = TTSClient(model_path=tmp_path / "m.onnx", binary_path=tmp_path / "piper")
+        assert client.health_check() is False
