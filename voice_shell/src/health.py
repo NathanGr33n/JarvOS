@@ -50,6 +50,24 @@ class HealthReport:
             parts.append(f"{engine.name}={flag}/{req}{detail}")
         return ", ".join(parts) if parts else "no engines configured"
 
+    def to_dict(self) -> dict:
+        """Serialize the report for JSON/CLI dashboards."""
+        return {
+            "ready": self.ready,
+            "engines": [
+                {
+                    "name": e.name,
+                    "healthy": e.healthy,
+                    "required": e.required,
+                    "detail": e.detail,
+                    "status": "ok" if e.healthy else "down",
+                }
+                for e in self.engines
+            ],
+            "unhealthy_required": [e.name for e in self.unhealthy_required()],
+            "summary": self.summary(),
+        }
+
 
 class EngineHealthGate:
     """Poll STT/LLM/TTS readiness until healthy or timeout."""

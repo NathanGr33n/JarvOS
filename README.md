@@ -166,6 +166,15 @@ Copy and edit `config.yaml` to point to your engine binaries and model paths, th
 
 ```bash
 python main.py
+# or explicitly:
+python main.py run
+```
+
+Check engine health gates without starting the full voice loop:
+
+```bash
+python main.py status
+python main.py status --format json
 ```
 
 Say **"Hey Nova"** and ask a question like *"What files are in my home directory?"* or *"What time is it?"*
