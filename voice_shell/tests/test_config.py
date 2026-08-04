@@ -147,3 +147,23 @@ class TestConfigFromYaml:
 
         cfg = Config.from_yaml(config_path)
         assert cfg.tts.speaker_id == 2
+
+
+class TestMemoryConfig:
+    def test_memory_defaults(self):
+        from voice_shell.src.config import Config
+        cfg = Config()
+        assert cfg.memory.enabled is True
+        assert cfg.memory.db_path == "data/memory.db"
+        assert cfg.memory.history_limit == 3
+
+    def test_memory_from_yaml(self, tmp_path):
+        from voice_shell.src.config import Config
+        path = tmp_path / "cfg.yaml"
+        path.write_text(
+            "memory:\n  enabled: false\n  db_path: custom.db\n  history_limit: 5\n"
+        )
+        cfg = Config.from_yaml(path)
+        assert cfg.memory.enabled is False
+        assert cfg.memory.db_path == "custom.db"
+        assert cfg.memory.history_limit == 5
