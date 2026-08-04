@@ -13,7 +13,7 @@ from .engines.llm import LLMClient
 from .engines.stt import STTClient
 from .engines.tts import TTSClient
 from .engines.wwd import WakeWordDetector
-from .hud import TextHUD
+from .hud import create_hud
 from .utils.wav_writer import write_wav_from_buffer
 from .actions.executor import ActionExecutor
 from .actions.registry import ActionRegistry
@@ -120,10 +120,7 @@ class Orchestrator:
         schema_names = list(allowed_commands) + [f"app:{app}" for app in allowed_apps]
         base_prompt = self.config.llm.system_prompt or self.DEFAULT_SYSTEM_PROMPT
         self.system_prompt = f"{base_prompt.rstrip()}\n\n{render_tool_schema_prompt(schema_names)}"
-        self.hud = TextHUD(
-            enabled=self.config.hud.enabled,
-            show_timestamps=self.config.hud.show_timestamps,
-        )
+        self.hud = create_hud(self.config.hud)
 
         # Persistent + in-memory conversation history
         self.memory = MemoryStore(
@@ -182,6 +179,9 @@ class Orchestrator:
         await self.stt.close()
         await self.llm.close()
         self.memory.close()
+        closer = getattr(self.hud, "close", None)
+        if callable(closer):
+            closer()
         if self.config.services.autostart:
             await asyncio.to_thread(self.service_manager.stop_all)
 
