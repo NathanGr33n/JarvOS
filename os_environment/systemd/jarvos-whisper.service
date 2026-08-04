@@ -1,0 +1,18 @@
+[Unit]
+Description=JarvOS Whisper.cpp STT Server
+After=network-online.target
+Wants=network-online.target
+PartOf=jarvos.target
+
+[Service]
+Type=simple
+Environment=JARVOS_WHISPER_BIN=%h/.local/bin/whisper-server
+Environment=JARVOS_WHISPER_MODEL=%h/.local/share/jarvos/models/ggml-tiny.bin
+Environment=JARVOS_WHISPER_HOST=127.0.0.1
+Environment=JARVOS_WHISPER_PORT=8081
+ExecStart=/bin/sh -c '"${JARVOS_WHISPER_BIN}" -m "${JARVOS_WHISPER_MODEL}" --host "${JARVOS_WHISPER_HOST}" --port "${JARVOS_WHISPER_PORT}" -pc 1 --convert --no-prints'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=jarvos.target
