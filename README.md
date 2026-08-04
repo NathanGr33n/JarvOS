@@ -85,7 +85,7 @@ This project is now in **early implementation**. Core design docs remain in [`Re
 |-------|------|--------|
 | **Phase 1: Voice Shell** | Python PoC on a standard Linux desktop. Wake word → STT → LLM → TTS → action execution. | **Implemented (active hardening)** |
 | **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **In Progress (schemas, tools, confirmation, memory landed)** |
-| **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **In Progress (services + floating HUD)** |
+| **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **In Progress (services + HUD + health gates)** |
 | **Phase 4: Hardware Tuning** | Optimize for Raspberry Pi 5, model swapping, and hardware-accelerated inference. | **Planned** |
 | **Phase 5: Advanced Agents** | Proactive suggestions, multi-user voice profiles, local email/calendar, and advanced coding assistant. | **Planned** |
 
