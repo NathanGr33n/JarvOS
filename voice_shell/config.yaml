@@ -27,9 +27,13 @@ tts:
   speaker_id: 0
   binary_path: "piper"
 actions:
-  allowed_shell_commands: ["ls", "cat", "pwd", "date", "cd", "time"]
+  allowed_shell_commands: ["ls", "cat", "pwd", "date", "cd", "time", "list_directory", "read_file", "search_files", "get_battery_status"]
   allowed_apps: ["firefox", "nautilus", "code", "terminal"]
   require_confirmation: false
 hud:
   enabled: true
   show_timestamps: true
+memory:
+  enabled: true
+  db_path: "data/memory.db"
+  history_limit: 3
