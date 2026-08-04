@@ -53,3 +53,14 @@ services:
   llama_command: []
   whisper_health_url: null
   llama_health_url: null
+
+health:
+  enabled: true
+  require_stt: true
+  require_llm: true
+  require_tts: true
+  startup_timeout: 60
+  poll_interval: 1.0
+  block_listening: true
+  fail_fast: false
+
