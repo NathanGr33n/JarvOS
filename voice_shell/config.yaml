@@ -33,6 +33,12 @@ actions:
 hud:
   enabled: true
   show_timestamps: true
+  mode: "both"
+  width: 480
+  height: 140
+  anchor: "top-center"
+  margin: 24
+  opacity: 0.92
 memory:
   enabled: true
   db_path: "data/memory.db"
