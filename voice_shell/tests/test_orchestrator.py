@@ -19,6 +19,7 @@ class TestOrchestrator:
         config.memory.db_path = str(tmp_path / "test_memory.db")
         config.memory.history_limit = 3
         config.hud.mode = "text"
+        config.health.enabled = False
 
         with patch("voice_shell.src.orchestrator.AudioCapture") as MockCapture, \
              patch("voice_shell.src.orchestrator.AudioPlayback") as MockPlayback, \
@@ -284,3 +285,105 @@ class TestOrchestrator:
 
         assert orch.state == State.IDLE
         assert orch.running is False
+
+
+class TestOrchestratorHealthGates:
+    """Engine readiness gate behavior."""
+
+    @pytest.fixture
+    def health_orch(self, tmp_path):
+        from voice_shell.src.config import Config
+
+        config = Config()
+        config.memory.db_path = str(tmp_path / "m.db")
+        config.hud.mode = "text"
+        config.health.enabled = True
+        config.health.startup_timeout = 0.2
+        config.health.poll_interval = 0.05
+        config.health.block_listening = True
+        config.health.fail_fast = False
+        config.services.autostart = False
+
+        with patch("voice_shell.src.orchestrator.AudioCapture"), \
+             patch("voice_shell.src.orchestrator.AudioPlayback"), \
+             patch("voice_shell.src.orchestrator.VoiceActivityDetector"), \
+             patch("voice_shell.src.orchestrator.WakeWordDetector"), \
+             patch("voice_shell.src.orchestrator.STTClient") as MockStt, \
+             patch("voice_shell.src.orchestrator.LLMClient") as MockLlm, \
+             patch("voice_shell.src.orchestrator.TTSClient") as MockTts, \
+             patch("voice_shell.src.orchestrator.ActionExecutor"):
+            orch = Orchestrator(config=config)
+            orch.stt.health_check = AsyncMock(return_value=True)
+            orch.llm.health_check = AsyncMock(return_value=True)
+            orch.tts.health_check = MagicMock(return_value=True)
+            # rebuild gate against mocked methods
+            from voice_shell.src.health import build_default_health_gate
+            orch.health_gate = build_default_health_gate(
+                orch.stt, orch.llm, orch.tts,
+                timeout=config.health.startup_timeout,
+                poll_interval=config.health.poll_interval,
+            )
+            yield orch
+            orch.memory.close()
+
+    @pytest.mark.asyncio
+    async def test_await_engines_ready_success(self, health_orch):
+        ok = await health_orch._await_engines_ready(startup=True)
+        assert ok is True
+        assert health_orch._engines_ready is True
+
+    @pytest.mark.asyncio
+    async def test_await_engines_ready_failure(self, health_orch):
+        health_orch.stt.health_check = AsyncMock(return_value=False)
+        from voice_shell.src.health import build_default_health_gate
+        health_orch.health_gate = build_default_health_gate(
+            health_orch.stt, health_orch.llm, health_orch.tts,
+            timeout=0.15, poll_interval=0.05,
+        )
+        health_orch.hud.error = MagicMock()
+        ok = await health_orch._await_engines_ready(startup=True)
+        assert ok is False
+        health_orch.hud.error.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_idle_blocks_listening_when_unhealthy(self, health_orch):
+        health_orch.audio_capture.get_chunk = AsyncMock(return_value=b"a")
+        health_orch.wwd.process_chunk = MagicMock(return_value=True)
+        health_orch.stt.health_check = AsyncMock(return_value=False)
+        from voice_shell.src.health import build_default_health_gate
+        health_orch.health_gate = build_default_health_gate(
+            health_orch.stt, health_orch.llm, health_orch.tts,
+            timeout=0.1, poll_interval=0.05,
+        )
+        health_orch.hud.error = MagicMock()
+        await health_orch._idle_phase()
+        assert health_orch.state == State.IDLE
+        health_orch.hud.error.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_idle_allows_listening_when_healthy(self, health_orch):
+        health_orch.audio_capture.get_chunk = AsyncMock(return_value=b"a")
+        health_orch.wwd.process_chunk = MagicMock(return_value=True)
+        await health_orch._idle_phase()
+        assert health_orch.state == State.LISTENING
+
+    @pytest.mark.asyncio
+    async def test_run_fail_fast_stops(self, health_orch):
+        health_orch.config.health.fail_fast = True
+        health_orch.stt.health_check = AsyncMock(return_value=False)
+        from voice_shell.src.health import build_default_health_gate
+        health_orch.health_gate = build_default_health_gate(
+            health_orch.stt, health_orch.llm, health_orch.tts,
+            timeout=0.1, poll_interval=0.05,
+        )
+        health_orch.audio_capture.start = MagicMock()
+        health_orch.audio_playback.start = MagicMock()
+        health_orch.wwd.start = MagicMock()
+        health_orch.audio_capture.stop = MagicMock()
+        health_orch.audio_playback.stop = MagicMock()
+        health_orch.wwd.stop = MagicMock()
+        health_orch.stt.close = AsyncMock()
+        health_orch.llm.close = AsyncMock()
+        await health_orch.run()
+        assert health_orch.running is False
+        health_orch.audio_capture.start.assert_not_called()
