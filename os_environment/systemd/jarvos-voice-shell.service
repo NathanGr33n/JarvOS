@@ -1,0 +1,17 @@
+[Unit]
+Description=JarvOS Voice Shell Orchestrator
+After=jarvos-whisper.service jarvos-llama.service
+Wants=jarvos-whisper.service jarvos-llama.service
+PartOf=jarvos.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Git/JarvOS/voice_shell
+Environment=PYTHONUNBUFFERED=1
+Environment=JARVOS_CONFIG=%h/Git/JarvOS/voice_shell/config.yaml
+ExecStart=/usr/bin/python3 %h/Git/JarvOS/voice_shell/main.py --config ${JARVOS_CONFIG}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=jarvos.target
