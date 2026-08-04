@@ -17,6 +17,8 @@ from .hud import TextHUD
 from .utils.wav_writer import write_wav_from_buffer
 from .actions.executor import ActionExecutor
 from .actions.registry import ActionRegistry
+from .actions.schemas import render_tool_schema_prompt
+from .memory import MemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class Orchestrator:
         "1. Be concise. Speak naturally but briefly. Users are listening, not reading.\n"
         "2. If actions are needed, respond in JSON with keys response and actions.\n"
         "3. Action format: {\"name\": \"ls\", \"arg\": \"optional-argument\"}.\n"
-        "4. Supported action names: ls, cat, cd, pwd, time, date, app:firefox, app:nautilus, app:code, app:terminal.\n"
+        "4. Prefer structured JSON tool calls over legacy tags.\n"
         "5. If no action is needed, return plain natural language text.\n"
         "6. If you cannot perform an action, say so and explain why.\n"
         "7. Never confirm destructive actions. Only read/list and approved app launch actions are permitted.\n"
@@ -105,20 +107,33 @@ class Orchestrator:
         )
 
         # Action layer
+        allowed_commands = self.config.actions.allowed_shell_commands
+        allowed_apps = self.config.actions.allowed_apps
         self.executor = ActionExecutor(
             registry=ActionRegistry(
-                allowed_shell_commands=self.config.actions.allowed_shell_commands,
-                allowed_apps=self.config.actions.allowed_apps,
-            )
+                allowed_shell_commands=allowed_commands,
+                allowed_apps=allowed_apps,
+            ),
+            require_confirmation=self.config.actions.require_confirmation,
         )
-        self.system_prompt = self.config.llm.system_prompt or self.DEFAULT_SYSTEM_PROMPT
+        schema_names = list(allowed_commands) + [f"app:{app}" for app in allowed_apps]
+        base_prompt = self.config.llm.system_prompt or self.DEFAULT_SYSTEM_PROMPT
+        self.system_prompt = f"{base_prompt.rstrip()}\n\n{render_tool_schema_prompt(schema_names)}"
         self.hud = TextHUD(
             enabled=self.config.hud.enabled,
             show_timestamps=self.config.hud.show_timestamps,
         )
 
-        # Conversation history (last 3 turns for context)
-        self._history: list[tuple[str, str]] = []
+        # Persistent + in-memory conversation history
+        self.memory = MemoryStore(
+            db_path=self.config.memory.db_path,
+            enabled=self.config.memory.enabled,
+        )
+        self._history_limit = max(1, int(self.config.memory.history_limit))
+        self._history: list[tuple[str, str]] = [
+            (turn.user_text, turn.assistant_text)
+            for turn in self.memory.get_recent_turns(self._history_limit)
+        ]
         self._last_transcript: str = ""
         self._last_response: str = ""
 
@@ -158,6 +173,7 @@ class Orchestrator:
         self.wwd.stop()
         await self.stt.close()
         await self.llm.close()
+        self.memory.close()
 
     async def _transition_to(self, new_state: State) -> None:
         """Log and switch to a new operational state."""
@@ -269,10 +285,12 @@ class Orchestrator:
                 logger.error("TTS synthesis of action result failed: %s", exc)
                 self.hud.error(f"TTS synthesis of action result failed: {exc}")
 
-        # Update conversation history
-        self._history.append((self._last_transcript, result.cleaned_response))
-        while len(self._history) > 3:
+        # Update conversation history (in-memory + persistent)
+        assistant_text = result.cleaned_response or ""
+        self._history.append((self._last_transcript, assistant_text))
+        while len(self._history) > self._history_limit:
             self._history.pop(0)
+        self.memory.add_turn(self._last_transcript, assistant_text)
 
         await self._transition_to(State.IDLE)
 
@@ -290,6 +308,10 @@ class Orchestrator:
     def _build_prompt(self, transcript: str) -> str:
         """Build the LLM prompt including system context and recent history."""
         parts = []
+        facts = self.memory.list_facts(limit=5)
+        if facts:
+            fact_lines = "; ".join(f"{key}={value}" for key, value in facts)
+            parts.append(f"Known facts: {fact_lines}")
         for user_msg, assistant_msg in self._history:
             parts.append(f"User: {user_msg}")
             parts.append(f"Assistant: {assistant_msg}")
