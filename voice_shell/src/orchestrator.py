@@ -20,6 +20,7 @@ from .actions.registry import ActionRegistry
 from .actions.schemas import render_tool_schema_prompt
 from .memory import MemoryStore
 from .services import ServiceManager
+from .health import EngineHealthGate, HealthReport, build_default_health_gate
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,21 @@ class Orchestrator:
         # Optional local engine supervision (dev fallback; systemd preferred)
         self.service_manager = ServiceManager.from_config(self.config)
 
+        # Engine readiness gates (STT/LLM/TTS)
+        health_cfg = self.config.health
+        self.health_gate = build_default_health_gate(
+            self.stt,
+            self.llm,
+            self.tts,
+            require_stt=health_cfg.require_stt,
+            require_llm=health_cfg.require_llm,
+            require_tts=health_cfg.require_tts,
+            timeout=health_cfg.startup_timeout,
+            poll_interval=health_cfg.poll_interval,
+        )
+        self._engines_ready = not health_cfg.enabled
+        self._last_health: Optional[HealthReport] = None
+
     async def run(self) -> None:
         """Run the main voice shell loop until ``stop()`` is called."""
         self.running = True
@@ -145,6 +161,17 @@ class Orchestrator:
             statuses = await asyncio.to_thread(self.service_manager.start_all, True)
             for name, status in statuses.items():
                 logger.info("Service %s status: %s", name, status.value)
+
+        if self.config.health.enabled:
+            ready = await self._await_engines_ready(startup=True)
+            if not ready and self.config.health.fail_fast:
+                logger.error("Required engines unhealthy at startup; stopping.")
+                self.running = False
+                await self._shutdown()
+                return
+        else:
+            self._engines_ready = True
+
         self.audio_capture.start()
         self.audio_playback.start()
         self.wwd.start()
@@ -201,6 +228,14 @@ class Orchestrator:
         chunk = await self.audio_capture.get_chunk()
         if self.wwd.process_chunk(chunk):
             logger.info("Wake word detected")
+            if (
+                self.config.health.enabled
+                and self.config.health.block_listening
+                and not await self._ensure_engines_ready_for_listening()
+            ):
+                logger.warning("Wake word ignored: required engines are unhealthy")
+                self.hud.error("Engines unavailable; try again shortly.")
+                return
             await self._transition_to(State.LISTENING)
 
     async def _listening_phase(self) -> None:
@@ -314,6 +349,44 @@ class Orchestrator:
                 logger.error("TTS stream error: %s", chunk)
                 break
             self.audio_playback.queue_chunk(chunk)
+
+
+    async def _await_engines_ready(self, startup: bool = False) -> bool:
+        """Wait for required engines; update HUD/logs with the result."""
+        report = await self.health_gate.wait_until_ready()
+        self._last_health = report
+        self._engines_ready = report.ready
+        if report.ready:
+            logger.info("Engine health gate passed: %s", report.summary())
+            return True
+
+        bad = ", ".join(e.name for e in report.unhealthy_required()) or "unknown"
+        msg = f"Engine health gate failed ({bad}): {report.summary()}"
+        if startup:
+            logger.error(msg)
+        else:
+            logger.warning(msg)
+        self.hud.error(msg)
+        return False
+
+    async def _ensure_engines_ready_for_listening(self) -> bool:
+        """Fast pre-listen check; does a single poll, then optional short wait."""
+        report = await self.health_gate.check_once()
+        self._last_health = report
+        if report.ready:
+            self._engines_ready = True
+            return True
+        # Brief retry window so a momentary blip does not drop the wake word.
+        short_gate = EngineHealthGate(
+            checks=self.health_gate.checks,
+            required=sorted(self.health_gate.required),
+            timeout=min(5.0, self.config.health.startup_timeout),
+            poll_interval=self.config.health.poll_interval,
+        )
+        report = await short_gate.wait_until_ready()
+        self._last_health = report
+        self._engines_ready = report.ready
+        return report.ready
 
     def _build_prompt(self, transcript: str) -> str:
         """Build the LLM prompt including system context and recent history."""
