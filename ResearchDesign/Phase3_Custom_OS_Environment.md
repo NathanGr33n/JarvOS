@@ -34,6 +34,8 @@
 
 ### 2.1 Design principles
 
+- **Engine health gates**: STT/LLM/TTS readiness is verified at startup and again before accepting speech after a wake word.
+
 - **Local-only binds**: engine HTTP APIs stay on `127.0.0.1`.
 - **Ordered startup**: STT/LLM healthy before voice shell becomes interactive.
 - **Graceful degradation**: if systemd user units are unavailable, `ServiceManager` can supervise subprocesses for development.
@@ -122,6 +124,7 @@ ResearchDesign/
 - Tests cover manager lifecycle without requiring real model binaries.
 - README marks Phase 3 as in progress (foundation).
 - Floating HUD module ships with text/floating/both modes and unit tests.
+- Orchestrator health gates block listening when required engines are down.
 
 ---
 
