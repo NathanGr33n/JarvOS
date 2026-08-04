@@ -37,3 +37,13 @@ memory:
   enabled: true
   db_path: "data/memory.db"
   history_limit: 3
+services:
+  # Prefer systemd user units in real sessions. Enable these only for dev supervision.
+  manage_whisper: false
+  manage_llama: false
+  autostart: false
+  ready_timeout: 30
+  whisper_command: []
+  llama_command: []
+  whisper_health_url: null
+  llama_health_url: null
