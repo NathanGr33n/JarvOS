@@ -74,14 +74,14 @@ This project is now in **early implementation**. Core design docs remain in [`Re
 
 - [`AI_First_Voice_OS.md`](ResearchDesign/AI_First_Voice_OS.md) — High-level architecture, vision, tech stack, and roadmap
 - [`Voice_Shell_PoC_Technical_Spec.md`](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md) — Detailed technical specification for Phase 1 (Voice Shell proof-of-concept)
-- [`voice_shell/`](voice_shell/) — Implemented Phase 1 pipeline plus Phase 2 foundation work (structured action payload support and text HUD scaffolding)
+- [`voice_shell/`](voice_shell/) — Implemented Phase 1 pipeline plus Phase 2 Action Core (tool schemas, expanded safe OS tools, confirmation gates, SQLite memory, structured actions, text HUD)
 
 ### Implementation Roadmap
 
 | Phase | Goal | Status |
 |-------|------|--------|
 | **Phase 1: Voice Shell** | Python PoC on a standard Linux desktop. Wake word → STT → LLM → TTS → action execution. | **Implemented (active hardening)** |
-| **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **In Progress (structured actions + text HUD started)** |
+| **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **In Progress (schemas, tools, confirmation, memory landed)** |
 | **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **Planned** |
 | **Phase 4: Hardware Tuning** | Optimize for Raspberry Pi 5, model swapping, and hardware-accelerated inference. | **Planned** |
 | **Phase 5: Advanced Agents** | Proactive suggestions, multi-user voice profiles, local email/calendar, and advanced coding assistant. | **Planned** |
