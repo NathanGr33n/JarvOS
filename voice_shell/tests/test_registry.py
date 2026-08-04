@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from voice_shell.src.actions.registry import ActionRegistry, ActionResult, _action_cat, _action_cd, _action_date, _action_launch_app, _action_ls, _action_time
+from voice_shell.src.actions.registry import ActionRegistry, ActionResult, _action_cat, _action_cd, _action_date, _action_get_battery_status, _action_launch_app, _action_ls, _action_search_files, _action_time
 
 
 class TestActionRegistry:
@@ -118,3 +118,47 @@ class TestBuiltInActions:
         result = _action_launch_app("nonexistent_application_12345")
         assert result.error is not None
         assert "Cannot launch" in result.error
+
+
+class TestPhase2Actions:
+    """Tests for Phase 2 registry expansions."""
+
+    def test_default_registry_has_phase2_actions(self):
+        registry = ActionRegistry()
+        assert registry.is_allowed("list_directory")
+        assert registry.is_allowed("read_file")
+        assert registry.is_allowed("search_files")
+        assert registry.is_allowed("get_battery_status")
+
+    def test_list_directory_alias(self, tmp_path: Path):
+        registry = ActionRegistry()
+        handler = registry.get("list_directory")
+        assert handler is not None
+        result = handler(str(tmp_path))
+        assert result.error is None
+        assert result.returncode == 0
+
+    def test_read_file_alias(self, tmp_path: Path):
+        path = tmp_path / "note.txt"
+        path.write_text("phase2")
+        registry = ActionRegistry()
+        handler = registry.get("read_file")
+        assert handler is not None
+        result = handler(str(path))
+        assert result.error is None
+        assert result.stdout == "phase2"
+
+    def test_search_files_finds_match(self, tmp_path: Path):
+        target = tmp_path / "hello_world.txt"
+        target.write_text("x")
+        result = _action_search_files(f"hello|{tmp_path}")
+        assert result.error is None
+        assert str(target) in result.stdout
+
+    def test_search_files_requires_query(self):
+        result = _action_search_files("")
+        assert result.error is not None
+
+    def test_get_battery_status_returns_status_or_error(self):
+        result = _action_get_battery_status()
+        assert result.stdout or result.error
