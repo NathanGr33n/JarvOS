@@ -28,6 +28,14 @@ class TestHealthReport:
         assert [e.name for e in report.unhealthy_required()] == ['llm']
         assert 'llm=down/required' in report.summary()
 
+    def test_to_dict(self):
+        from voice_shell.src.health import EngineHealth
+        report = HealthReport(engines=[EngineHealth('stt', True, True, detail='')])
+        payload = report.to_dict()
+        assert payload['ready'] is True
+        assert payload['engines'][0]['name'] == 'stt'
+        assert payload['engines'][0]['status'] == 'ok'
+
 
 class TestEngineHealthGate:
     @pytest.mark.asyncio
