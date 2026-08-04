@@ -1,3 +1,8 @@
+import os
+
+# Keep unit tests free of interactive floating windows.
+os.environ.setdefault("JARVOS_HUD_HEADLESS", "1")
+
 import asyncio
 import sys
 from unittest.mock import MagicMock

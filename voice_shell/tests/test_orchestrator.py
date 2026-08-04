@@ -18,6 +18,7 @@ class TestOrchestrator:
         config.memory.enabled = True
         config.memory.db_path = str(tmp_path / "test_memory.db")
         config.memory.history_limit = 3
+        config.hud.mode = "text"
 
         with patch("voice_shell.src.orchestrator.AudioCapture") as MockCapture, \
              patch("voice_shell.src.orchestrator.AudioPlayback") as MockPlayback, \
