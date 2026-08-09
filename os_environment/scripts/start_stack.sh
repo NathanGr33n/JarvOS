@@ -18,7 +18,9 @@ cfg = Config.from_yaml(cfg_path) if cfg_path.exists() else Config()
 mgr = ServiceManager.from_config(cfg)
 print("Service definitions:")
 for name, svc in mgr.services.items():
-    print(f"  - {name}: {" ".join(svc.command)} (health={svc.health_url or "n/a"})")
+    cmd_str = " ".join(svc.command)
+    health = svc.health_url or "n/a"
+    print(f"  - {name}: {cmd_str} (health={health})")
 print()
 print("Dev note: start whisper/llama externally or via systemd, then:")
 print("  python3 main.py --config config.yaml")
