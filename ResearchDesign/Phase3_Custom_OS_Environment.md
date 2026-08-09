@@ -50,8 +50,11 @@
 | `jarvos-whisper.service` | whisper.cpp HTTP server | `127.0.0.1:8081` |
 | `jarvos-llama.service` | llama-server HTTP API | `127.0.0.1:8082` |
 | `jarvos-voice-shell.service` | Phase 1/2 orchestrator | N/A (local audio) |
+| `jarvos-compositor.service` | Optional dwl compositor session | N/A (local display) |
 
-Shared target: `jarvos.target` pulls the stack for a session.
+Shared target: `jarvos.target` pulls the engine + voice-shell stack for a
+session. `jarvos-compositor.target` is a **separate, opt-in** target (see
+Section 5) since enabling it changes the graphical session.
 
 ---
 
@@ -95,10 +98,24 @@ hud:
   opacity: 0.92
 ```
 
-### 5.3 Later roadmap
-- Dedicated wlroots/dwl-based compositor shell
+### 5.3 Compositor integration (opt-in)
+- `os_environment/compositor/build.sh` clones and builds stock `dwl` v0.8
+  (wlroots-based, already supports `wlr-layer-shell`, so the existing
+  floating HUD renders without any compositor source changes).
+- `os_environment/compositor/session.sh` is dwl's `-s` startup command; it
+  launches the voice shell as the session's app.
+- `jarvos-compositor.service` + `jarvos-compositor.target` wire this into
+  systemd, deliberately kept out of the default `jarvos.target` since
+  enabling them changes the user's graphical session. The default unit
+  nests dwl inside an existing session for safe local testing; standalone
+  TTY/KMS operation on dedicated hardware is documented as an alternative
+  in `os_environment/systemd/README.md`.
+
+### 5.4 Later roadmap
 - Richer visual action feedback and animation
 - Global hotkey remains available as wake fallback
+- A curated "app store" UI on top of the `voice_shell.src.appstore` module
+  (currently CLI-only via `main.py models`)
 
 ---
 
@@ -106,9 +123,11 @@ hud:
 
 ```
 os_environment/
-  systemd/                 # unit templates
+  systemd/                 # unit templates (engines, voice shell, compositor)
   scripts/                 # install + start helpers
+  compositor/              # opt-in dwl build script + session startup command
 voice_shell/src/services/  # Python service manager + health checks
+voice_shell/src/appstore/  # local model catalog + TOFU-checksummed downloader
 ResearchDesign/
   Phase3_Custom_OS_Environment.md
 ```
@@ -125,6 +144,10 @@ ResearchDesign/
 - README marks Phase 3 as in progress (foundation).
 - Floating HUD module ships with text/floating/both modes and unit tests.
 - Orchestrator health gates block listening when required engines are down.
+- Opt-in compositor build script and systemd units exist and are documented
+  (kept out of the default `jarvos.target`).
+- A local model app store CLI (`main.py models`) can list, check status, and
+  download catalog entries with checksum pinning, covered by unit tests.
 
 ---
 

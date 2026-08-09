@@ -75,9 +75,9 @@ This project is now in **early implementation**. Core design docs remain in [`Re
 - [`AI_First_Voice_OS.md`](ResearchDesign/AI_First_Voice_OS.md) — High-level architecture, vision, tech stack, and roadmap
 - [`Voice_Shell_PoC_Technical_Spec.md`](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md) — Detailed technical specification for Phase 1 (Voice Shell proof-of-concept)
 - [`Phase3_Custom_OS_Environment.md`](ResearchDesign/Phase3_Custom_OS_Environment.md) — Phase 3 service architecture and session bootstrap design
-- [`voice_shell/`](voice_shell/) — Implemented Phase 1 pipeline plus Phase 2 Action Core (tool schemas, expanded safe OS tools, confirmation gates, SQLite memory, structured actions, text HUD)
-- [`os_environment/`](os_environment/) — Phase 3 foundation: systemd unit templates, install/start scripts, and service supervision helpers
-- Floating voice HUD in `voice_shell/src/hud/` (GTK4 overlay / always-on-top bar; `hud.mode: text|floating|both`)
+- [`voice_shell/`](voice_shell/) — Implemented Phase 1 pipeline plus Phase 2 Action Core (tool schemas, expanded safe OS tools, confirmation gates, SQLite memory, structured actions, text HUD) and a local model app store (`main.py models list|status|download`)
+- [`os_environment/`](os_environment/) — Phase 3 foundation: systemd unit templates, install/start scripts, service supervision helpers, and an opt-in dwl-based compositor (`os_environment/compositor/`)
+- Floating voice HUD in `voice_shell/src/hud/` (GTK4 overlay / always-on-top bar; `hud.mode: text|floating|both`), rendered as a layer-shell overlay when run under the opt-in compositor
 
 ### Implementation Roadmap
 
@@ -85,7 +85,7 @@ This project is now in **early implementation**. Core design docs remain in [`Re
 |-------|------|--------|
 | **Phase 1: Voice Shell** | Python PoC on a standard Linux desktop. Wake word → STT → LLM → TTS → action execution. | **Implemented (active hardening)** |
 | **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **In Progress (schemas, tools, confirmation, memory landed)** |
-| **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **In Progress (services + HUD + health gates)** |
+| **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **In Progress (services + HUD + health gates + opt-in dwl compositor + model app store)** |
 | **Phase 4: Hardware Tuning** | Optimize for Raspberry Pi 5, model swapping, and hardware-accelerated inference. | **Planned** |
 | **Phase 5: Advanced Agents** | Proactive suggestions, multi-user voice profiles, local email/calendar, and advanced coding assistant. | **Planned** |
 
