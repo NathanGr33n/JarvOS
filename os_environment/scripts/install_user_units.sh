@@ -8,7 +8,8 @@ UNIT_DST="${HOME}/.config/systemd/user"
 
 mkdir -p "${UNIT_DST}"
 
-for unit in jarvos.target jarvos-whisper.service jarvos-llama.service jarvos-voice-shell.service; do
+for unit in jarvos.target jarvos-whisper.service jarvos-llama.service jarvos-voice-shell.service \
+            jarvos-compositor.target jarvos-compositor.service; do
   src="${UNIT_SRC}/${unit}"
   dst="${UNIT_DST}/${unit}"
   sed "s|%h/Git/JarvOS|${REPO_ROOT}|g" "${src}" > "${dst}"

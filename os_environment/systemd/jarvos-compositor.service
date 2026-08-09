@@ -1,0 +1,20 @@
+[Unit]
+Description=JarvOS Compositor (dwl) - opt-in, changes your graphical session
+Documentation=man:dwl(1)
+PartOf=jarvos-compositor.target
+# Nested/dev-safe default: requires an existing graphical session to nest
+# inside (WAYLAND_DISPLAY/DISPLAY inherited from the user session). For
+# standalone TTY/KMS operation on dedicated hardware, remove the dependency
+# on graphical-session.target and enable this unit from a VT instead; see
+# os_environment/systemd/README.md.
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment=JARVOS_CONFIG=%h/Git/JarvOS/voice_shell/config.yaml
+ExecStart=%h/Git/JarvOS/os_environment/compositor/build/dwl/dwl -s %h/Git/JarvOS/os_environment/compositor/session.sh
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=jarvos-compositor.target
