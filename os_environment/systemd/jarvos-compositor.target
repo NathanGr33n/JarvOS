@@ -1,0 +1,7 @@
+[Unit]
+Description=JarvOS Compositor Session (opt-in)
+# Deliberately separate from jarvos.target: enabling this changes the
+# user's graphical session, so it must be enabled explicitly rather than
+# pulled in automatically by the engine/voice-shell stack.
+Wants=jarvos-compositor.service
+After=jarvos-compositor.service
