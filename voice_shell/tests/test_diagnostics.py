@@ -123,3 +123,26 @@ class TestStatusCLI:
     def test_parse_defaults_to_run(self):
         args = main_mod._parse_args([])
         assert args.command == "run"
+
+
+class TestModelsCLI:
+    def test_models_list(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main_mod.main(["models", "list"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "whisper-tiny" in out
+
+    def test_models_status(self, tmp_path: Path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main_mod.main(["models", "--dir", str(tmp_path), "status"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "missing" in out
+
+    def test_models_download_unknown_name_fails(self, tmp_path: Path, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main_mod.main(["models", "--dir", str(tmp_path), "download", "nonexistent"])
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "Error" in out
