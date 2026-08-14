@@ -196,9 +196,10 @@ For full configuration details, engine setup, and build instructions, see the [P
 | **LLM Engine** | llama.cpp |
 | **LLM Models** | Qwen2.5 / Phi-3 / Llama 3.2 (GGUF Q4) |
 | **TTS** | Piper |
-| **Vector DB** | sqlite-vec (Phase 2+) |
+| **Persistent Memory** | SQLite — conversation history + key/value facts (implemented) |
+| **Vector/Semantic Search** | sqlite-vec (planned, not yet implemented) |
 | **Languages** | Python / Rust / C++ |
-| **Sandboxing** | Bubblewrap / Firejail (Phase 2+) |
+| **Sandboxing** | Bubblewrap / Firejail (planned, not yet implemented) |
 
 ---
 
@@ -206,7 +207,7 @@ For full configuration details, engine setup, and build instructions, see the [P
 
 - **No Remote Exposure**: All internal APIs bind to `127.0.0.1` only.
 - **No Shell Injection**: Action execution uses strict whitelists and `subprocess` without shell interpretation.
-- **Read-Only Default**: Phase 1 cannot delete or modify files. Destructive actions require explicit confirmation (Phase 2+).
+- **Read-Only Default**: No delete/write file actions exist. Application launches require explicit confirmation (implemented in Phase 2); any future destructive actions would use the same confirmation gate.
 - **Encrypted Storage**: User data and model weights are stored on an encrypted partition (LUKS) in future phases.
 - **No Telemetry**: No data collection, no model training on user data, no cloud logging.
 
