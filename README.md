@@ -32,6 +32,24 @@ JarvOS is different:
 
 ---
 
+## Repository Layout
+
+```
+JarvOS/
+├── voice_shell/           # Phase 1–2 Python voice pipeline + Action Core
+│   ├── main.py            # CLI entrypoint (run | status | models)
+│   ├── config.yaml        # Default configuration
+│   ├── requirements.txt   # Runtime Python dependencies
+│   ├── src/               # Engines, actions, HUD, memory, services, app store
+│   └── tests/             # Unit tests (pytest)
+├── os_environment/        # Phase 3 systemd units, scripts, optional dwl compositor
+├── ResearchDesign/        # Architecture and phase design docs
+├── pytest.ini             # Pytest config (run from repo root)
+└── README.md
+```
+
+---
+
 ## Architecture Overview
 
 JarvOS is built as a modular pipeline of specialized, lightweight models coordinated by a central orchestrator:
@@ -48,12 +66,14 @@ Microphone → Wake Word → STT → LLM Core → TTS → Speaker
 
 | Layer | Technology | Role |
 |-------|------------|------|
-| **Wake Word** | Porcupine / OpenWakeWord | Always-on listening for "Hey Nova" |
-| **STT** | whisper.cpp (tiny/base) | Converts speech to text in real-time |
-| **LLM Core** | llama.cpp + Qwen2.5/Llama 3.2 | Interprets intent, generates responses, issues commands |
+| **Wake Word** | Porcupine / OpenWakeWord / hotkey fallback | Always-on listening for "Hey Nova" (default config uses `Ctrl+Shift+Space`) |
+| **STT** | whisper.cpp server | Converts speech to text over local HTTP |
+| **LLM Core** | llama.cpp server + Qwen2.5/Llama 3.2 | Interprets intent, generates responses, issues structured actions |
 | **TTS** | Piper | Fast neural text-to-speech |
-| **Action Layer** | Python orchestrator + regex parser | Executes file system, app, and system commands |
-| **Display** | Wayland + custom compositor (Phase 3) | Minimal HUD for status, transcripts, and visual feedback |
+| **Action Layer** | Python orchestrator + JSON tool schemas | Executes safe OS tools with optional confirmation gates |
+| **Memory** | SQLite | Conversation history and key/value facts |
+| **HUD** | Text + GTK4 floating overlay | Status, transcripts, and visual feedback (`hud.mode: text|floating|both`) |
+| **Display** | Wayland + optional dwl compositor (Phase 3) | Layer-shell overlay for the floating HUD |
 | **Base OS** | Linux (Debian/Arch/Alpine) | Stripped-down, audio-first, lightweight |
 
 ---
@@ -70,14 +90,13 @@ Microphone → Wake Word → STT → LLM Core → TTS → Speaker
 
 ## Project Status
 
-This project is now in **early implementation**. Core design docs remain in [`ResearchDesign/`](ResearchDesign/), and a working codebase exists in [`voice_shell/`](voice_shell/):
+This project is in **early implementation**. Design docs live in [`ResearchDesign/`](ResearchDesign/), and the working codebase is under [`voice_shell/`](voice_shell/) and [`os_environment/`](os_environment/):
 
 - [`AI_First_Voice_OS.md`](ResearchDesign/AI_First_Voice_OS.md) — High-level architecture, vision, tech stack, and roadmap
-- [`Voice_Shell_PoC_Technical_Spec.md`](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md) — Detailed technical specification for Phase 1 (Voice Shell proof-of-concept)
+- [`Voice_Shell_PoC_Technical_Spec.md`](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md) — Detailed technical specification for Phase 1
 - [`Phase3_Custom_OS_Environment.md`](ResearchDesign/Phase3_Custom_OS_Environment.md) — Phase 3 service architecture and session bootstrap design
-- [`voice_shell/`](voice_shell/) — Implemented Phase 1 pipeline plus Phase 2 Action Core (tool schemas, expanded safe OS tools, confirmation gates, SQLite memory, structured actions, text HUD) and a local model app store (`main.py models list|status|download`)
+- [`voice_shell/`](voice_shell/) — Phase 1 pipeline, Phase 2 Action Core (tool schemas, safe OS tools, confirmation gates, SQLite memory, structured actions, text/floating HUD), and a local model app store (`models list|status|download`)
 - [`os_environment/`](os_environment/) — Phase 3 foundation: systemd unit templates, install/start scripts, service supervision helpers, and an opt-in dwl-based compositor (`os_environment/compositor/`)
-- Floating voice HUD in `voice_shell/src/hud/` (GTK4 overlay / always-on-top bar; `hud.mode: text|floating|both`), rendered as a layer-shell overlay when run under the opt-in compositor
 
 ### Implementation Roadmap
 
@@ -101,16 +120,18 @@ This project is now in **early implementation**. Core design docs remain in [`Re
 
 ---
 
-## Quick Start (Phase 1 PoC)
+## Quick Start (Voice Shell)
 
-> Phase 1 is a user-level Python application that runs on any existing Linux desktop. It does not require installing a custom OS.
+> The voice shell is a user-level Python application that runs on any existing Linux desktop. It does not require installing a custom OS.
 
 ### Prerequisites
 
 - Linux (Zorin OS, Debian, Arch, or Ubuntu)
 - Python 3.11+
 - A working microphone and speakers
-- ~2GB free disk space for models
+- Local whisper.cpp and llama.cpp HTTP servers (or configure `services.*` to supervise them)
+- Piper binary on `PATH` (or set `tts.binary_path` in config)
+- Disk space for models (varies by profile; start with ~2GB)
 
 ### 1. Clone the Repository
 
@@ -119,67 +140,144 @@ git clone https://github.com/NathanGr33n/JarvOS.git
 cd JarvOS
 ```
 
-### 2. Install External Engines
+### 2. Create a Virtual Environment and Install Dependencies
+
+Run all commands from the **repository root** so `voice_shell` imports resolve:
 
 ```bash
-# whisper.cpp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r voice_shell/requirements.txt
+
+# Recommended for the test suite
+pip install pytest pytest-asyncio
+```
+
+Optional floating HUD (system packages):
+
+```bash
+# Debian/Ubuntu/Zorin
+sudo apt install python3-gi gir1.2-gtk-4.0
+# Optional Wayland layer-shell overlay support
+# sudo apt install gir1.2-gtk4layershell-1.0   # package name may vary
+```
+
+### 3. Install External Engines
+
+```bash
+# whisper.cpp (build the server binary you will point config at)
 git clone https://github.com/ggerganov/whisper.cpp.git
-cd whisper.cpp && make -j$(nproc)
+cd whisper.cpp && cmake -B build && cmake --build build -j"$(nproc)"
 
 # llama.cpp
 git clone https://github.com/ggerganov/llama.cpp.git
-cd llama.cpp && make -j$(nproc) LLAMA_NO_AVX512=1
+cd llama.cpp && cmake -B build && cmake --build build -j"$(nproc)"
 
-# Piper (download pre-built binary)
+# Piper — download a pre-built binary for your platform
 # https://github.com/rhasspy/piper/releases
 ```
 
-### 3. Download Models
+Start the engines bound to localhost only (example ports match `voice_shell/config.yaml`):
+
+```bash
+# STT — adjust binary/model paths for your machine
+./whisper.cpp/build/bin/whisper-server \
+  -m /path/to/ggml-tiny.bin \
+  --host 127.0.0.1 --port 8081
+
+# LLM
+./llama.cpp/build/bin/llama-server \
+  -m /path/to/qwen2.5-1.5b-instruct-q4_k_m.gguf \
+  --host 127.0.0.1 --port 8082
+```
+
+Alternatively, install the user systemd units under [`os_environment/`](os_environment/systemd/README.md) and set `JARVOS_WHISPER_BIN`, `JARVOS_WHISPER_MODEL`, `JARVOS_LLAMA_BIN`, `JARVOS_LLAMA_MODEL`, and `JARVOS_CONFIG`.
+
+### 4. Download Models
+
+Preferred: use the built-in local model app store (writes under `./models/`, which is gitignored):
+
+```bash
+# From the repository root, with the venv active
+python -m voice_shell.main models list
+python -m voice_shell.main models download whisper-tiny
+python -m voice_shell.main models download piper-lessac-medium
+python -m voice_shell.main models status
+```
+
+Catalog entries currently include STT/TTS artifacts such as `whisper-tiny`, `whisper-base`, and `piper-lessac-medium`. LLM GGUF weights are still fetched manually, for example:
 
 ```bash
 pip install huggingface-hub
-
-# Whisper tiny model
-bash whisper.cpp/models/download-ggml-model.sh tiny
-
-# LLM (Qwen2.5-1.5B)
 huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct-GGUF \
   qwen2.5-1.5b-instruct-q4_k_m.gguf \
   --local-dir ./models/llm/
-
-# Piper voice
-wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
-wget https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
 ```
 
-### 4. Install Python Dependencies
+Point `tts.model_path` and your llama/whisper server flags at the downloaded files. Piper also needs the matching `.onnx.json` next to the voice model when required by your Piper build.
+
+### 5. Configure
+
+Edit [`voice_shell/config.yaml`](voice_shell/config.yaml) (or copy it and pass `--config`):
+
+- `stt.base_url` / `llm.base_url` — local engine endpoints (default `127.0.0.1:8081` / `:8082`)
+- `tts.binary_path` / `tts.model_path` — Piper binary and voice model
+- `wake_word.engine` — default is `"hotkey"` (`Ctrl+Shift+Space`); set a model path for Porcupine/OpenWakeWord
+- `hud.mode` — `text`, `floating`, or `both`
+- `memory.db_path` — default `data/memory.db` (gitignored)
+- `actions.*` — command/app allowlists and confirmation gates
+- `health.*` — startup readiness gates for STT/LLM/TTS
+
+### 6. Run
+
+Always invoke from the **repository root**:
 
 ```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+source .venv/bin/activate
+
+# Health gates + supervised service snapshot (no full voice loop)
+python -m voice_shell.main --config voice_shell/config.yaml status
+python -m voice_shell.main --config voice_shell/config.yaml status --format json
+
+# Start the orchestrator
+python -m voice_shell.main --config voice_shell/config.yaml run
+# or simply:
+python -m voice_shell.main --config voice_shell/config.yaml
 ```
 
-### 5. Configure & Run
+With the default hotkey wake backend, press **Ctrl+Shift+Space**, then speak. With a wake-word model configured, say **"Hey Nova"**.
 
-Copy and edit `config.yaml` to point to your engine binaries and model paths, then:
+Examples: *"What files are in my home directory?"* or *"What time is it?"*
+
+### 7. Tests
 
 ```bash
-python main.py
-# or explicitly:
-python main.py run
+source .venv/bin/activate
+pip install pytest pytest-asyncio   # if not already installed
+pytest
 ```
 
-Check engine health gates without starting the full voice loop:
+Tests run headless by default (`JARVOS_HUD_HEADLESS=1` is set in `voice_shell/tests/conftest.py`).
+
+For engine setup details and the full Phase 1 design, see the [Phase 1 Technical Specification](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md). For systemd stack install and the optional compositor, see [`os_environment/systemd/README.md`](os_environment/systemd/README.md).
+
+---
+
+## Optional: systemd stack and compositor
 
 ```bash
-python main.py status
-python main.py status --format json
+./os_environment/scripts/install_user_units.sh
+systemctl --user daemon-reload
+systemctl --user enable --now jarvos.target
+systemctl --user status jarvos.target
 ```
 
-Say **"Hey Nova"** and ask a question like *"What files are in my home directory?"* or *"What time is it?"*
+The opt-in dwl compositor is **not** part of `jarvos.target` (it can change your graphical session). Build and enable separately only if you want a layer-shell session for the floating HUD:
 
-For full configuration details, engine setup, and build instructions, see the [Phase 1 Technical Specification](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md).
+```bash
+./os_environment/compositor/build.sh
+systemctl --user enable --now jarvos-compositor.target
+```
 
 ---
 
@@ -190,8 +288,8 @@ For full configuration details, engine setup, and build instructions, see the [P
 | **Kernel** | Linux (Mainline) |
 | **Base OS** | Debian / Arch / Alpine |
 | **Audio** | PipeWire + ALSA |
-| **Display** | Wayland + Custom Compositor (Phase 3) |
-| **Wake Word** | OpenWakeWord / Porcupine |
+| **Display** | Wayland + optional dwl compositor (Phase 3) |
+| **Wake Word** | OpenWakeWord / Porcupine / hotkey fallback |
 | **STT** | whisper.cpp |
 | **LLM Engine** | llama.cpp |
 | **LLM Models** | Qwen2.5 / Phi-3 / Llama 3.2 (GGUF Q4) |
@@ -206,16 +304,22 @@ For full configuration details, engine setup, and build instructions, see the [P
 ## Security & Privacy
 
 - **No Remote Exposure**: All internal APIs bind to `127.0.0.1` only.
-- **No Shell Injection**: Action execution uses strict whitelists and `subprocess` without shell interpretation.
-- **Read-Only Default**: No delete/write file actions exist. Application launches require explicit confirmation (implemented in Phase 2); any future destructive actions would use the same confirmation gate.
-- **Encrypted Storage**: User data and model weights are stored on an encrypted partition (LUKS) in future phases.
+- **No Shell Injection**: Action execution uses strict allowlists and `subprocess` without shell interpretation.
+- **Read-Only Default**: Destructive file actions are not exposed. Application launches and higher-risk tools can require explicit confirmation (`actions.require_confirmation`).
+- **Model downloads**: The app store only fetches URLs from a curated catalog and pins SHA-256 after first download (TOFU).
+- **Encrypted Storage**: User data and model weights are intended for an encrypted partition (LUKS) in future phases.
 - **No Telemetry**: No data collection, no model training on user data, no cloud logging.
 
 ---
 
 ## Contributing
 
-JarvOS is in early research and design. Contributions, feedback, and ideas are welcome. Please open an issue or discussion to share thoughts on architecture, model choices, or hardware targets before submitting code.
+JarvOS is in early implementation. Contributions, feedback, and ideas are welcome. Please open an issue or discussion to share thoughts on architecture, model choices, or hardware targets before submitting large code changes.
+
+Suggested workflow:
+1. Keep changes scoped and testable (`pytest` from the repo root).
+2. Do not commit models, virtualenvs, `data/`, or compositor build trees (see `.gitignore`).
+3. Prefer feature branches for larger work, verify functionality/security, then merge back.
 
 ---
 
