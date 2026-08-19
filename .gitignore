@@ -1,2 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Models and engine binaries (never committed; fetch via 'models download')
+models/
+bin/
+
+# Local runtime data (SQLite memory store, captured audio, logs)
+data/
+*.wav
+*.log
+*.tmp
+*.bak
+
 # Cloned/compiled dwl checkout produced by os_environment/compositor/build.sh
 os_environment/compositor/build/
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+.DS_Store
