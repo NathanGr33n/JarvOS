@@ -15,7 +15,7 @@ from .engines.tts import TTSClient
 from .engines.wwd import WakeWordDetector
 from .hud import create_hud
 from .utils.wav_writer import write_wav_from_buffer
-from .actions.executor import ActionExecutor
+from .actions.executor import ActionExecutor, ParsedAction
 from .actions.registry import ActionRegistry, _action_get_system_status
 from .actions.schemas import render_tool_schema_prompt
 from .memory import MemoryStore
@@ -313,18 +313,19 @@ class Orchestrator:
         # Store the full response (with action tags) for history
         self._last_response = llm_response
 
-        # Execute actions from the response
-        result = self.executor.parse_and_execute(llm_response)
-        if result.cleaned_response:
-            logger.info("Response: %s", result.cleaned_response)
-            self.hud.response(result.cleaned_response)
+        parsed = self.executor.parse_response(llm_response)
+        if parsed.cleaned_response:
+            logger.info("Response: %s", parsed.cleaned_response)
+            self.hud.response(parsed.cleaned_response)
+
+        action_result_text = await self._execute_actions_with_confirmation(parsed.actions)
 
         # If there were action results, speak them too
-        if result.action_result:
-            logger.info("Action result: %s", result.action_result)
-            self.hud.action_result(result.action_result)
+        if action_result_text:
+            logger.info("Action result: %s", action_result_text)
+            self.hud.action_result(action_result_text)
             try:
-                action_audio = self.tts.synthesize(f"Action result: {result.action_result}")
+                action_audio = self.tts.synthesize(f"Action result: {action_result_text}")
                 self.audio_playback.queue_chunk(action_audio)
                 await self.audio_playback.wait_for_empty()
             except Exception as exc:
@@ -332,13 +333,145 @@ class Orchestrator:
                 self.hud.error(f"TTS synthesis of action result failed: {exc}")
 
         # Update conversation history (in-memory + persistent)
-        assistant_text = result.cleaned_response or ""
+        assistant_text = parsed.cleaned_response or ""
         self._history.append((self._last_transcript, assistant_text))
         while len(self._history) > self._history_limit:
             self._history.pop(0)
         self.memory.add_turn(self._last_transcript, assistant_text)
 
         await self._transition_to(State.IDLE)
+
+    async def _execute_actions_with_confirmation(self, actions: list[ParsedAction]) -> str:
+        """Run safe actions immediately; voice-confirm gated ones when enabled."""
+        if not actions:
+            return ""
+
+        immediate: list[ParsedAction] = []
+        gated: list[ParsedAction] = []
+        for action in actions:
+            if self.executor.needs_confirmation(action):
+                gated.append(action)
+            else:
+                immediate.append(action)
+
+        lines: list[str] = []
+        for action in immediate:
+            result = self.executor.execute(action, force=True)
+            lines.append(self.executor.format_action_result(action, result))
+
+        if not gated:
+            return "\n".join(lines)
+
+        if not self.config.actions.require_confirmation:
+            for action in gated:
+                result = self.executor.execute(action, force=True)
+                lines.append(self.executor.format_action_result(action, result))
+            return "\n".join(lines)
+
+        if self.config.actions.confirm_batch:
+            confirmed = await self._confirm_actions_voice(gated)
+            if confirmed:
+                for action in gated:
+                    self.executor.confirm_action(action.action_name)
+                    result = self.executor.execute(action, force=True)
+                    lines.append(self.executor.format_action_result(action, result))
+            else:
+                for action in gated:
+                    lines.append(f"[{action.action_name}] Cancelled: user declined confirmation.")
+            return "\n".join(lines)
+
+        for action in gated:
+            ok = await self._confirm_actions_voice([action])
+            if ok:
+                self.executor.confirm_action(action.action_name)
+                result = self.executor.execute(action, force=True)
+                lines.append(self.executor.format_action_result(action, result))
+            else:
+                lines.append(f"[{action.action_name}] Cancelled: user declined confirmation.")
+        return "\n".join(lines)
+
+    async def _confirm_actions_voice(self, actions: list[ParsedAction]) -> bool:
+        """Prompt the user and listen for a short yes/no reply."""
+        if not actions:
+            return True
+
+        descriptions = [self.executor.describe_action(a) for a in actions]
+        if len(descriptions) == 1:
+            prompt = f"Confirm: {descriptions[0]}? Please say yes or no."
+        else:
+            joined = "; ".join(descriptions)
+            prompt = f"Confirm these actions: {joined}? Please say yes or no."
+
+        logger.info("Requesting voice confirmation: %s", prompt)
+        self.hud.action_result(f"Confirm: {'; '.join(descriptions)}")
+        try:
+            prompt_audio = self.tts.synthesize(prompt)
+            self.audio_playback.queue_chunk(prompt_audio)
+            await self.audio_playback.wait_for_empty()
+        except Exception as exc:
+            logger.error("TTS confirmation prompt failed: %s", exc)
+            self.hud.error(f"Confirmation prompt failed: {exc}")
+            return False
+
+        transcript = await self._capture_confirmation_transcript()
+        if not transcript:
+            logger.info("No confirmation transcript captured; treating as declined")
+            self.hud.action_result("Confirmation timed out or empty; cancelled.")
+            return False
+
+        logger.info("Confirmation transcript: %s", transcript)
+        self.hud.transcript(transcript)
+
+        if self.executor.is_affirmative(transcript):
+            return True
+        if self.executor.is_negative(transcript):
+            return False
+
+        # Unclear answer — one short re-prompt, then decline.
+        retry = "I didn't catch that. Please say yes or no."
+        try:
+            retry_audio = self.tts.synthesize(retry)
+            self.audio_playback.queue_chunk(retry_audio)
+            await self.audio_playback.wait_for_empty()
+        except Exception as exc:
+            logger.error("TTS confirmation retry failed: %s", exc)
+            return False
+
+        transcript = await self._capture_confirmation_transcript()
+        if transcript and self.executor.is_affirmative(transcript):
+            self.hud.transcript(transcript)
+            return True
+        if transcript:
+            self.hud.transcript(transcript)
+        return False
+
+    async def _capture_confirmation_transcript(self) -> str:
+        """Capture a short utterance for yes/no confirmation."""
+        timeout = max(1.0, float(self.config.actions.confirmation_timeout))
+        try:
+            audio = await self.audio_capture.capture_until_silence(
+                self.vad,
+                max_duration=timeout,
+            )
+        except Exception as exc:
+            logger.error("Confirmation capture failed: %s", exc)
+            return ""
+
+        if not audio:
+            return ""
+
+        wav_path = Path(tempfile.gettempdir()) / "voice_shell_confirm.wav"
+        try:
+            write_wav_from_buffer(
+                audio,
+                output_path=wav_path,
+                sample_rate=self.config.audio.sample_rate_input,
+                channels=1,
+            )
+            return (await self.stt.transcribe_file(wav_path)).strip()
+        except Exception as exc:
+            logger.error("Confirmation STT failed: %s", exc)
+            return ""
 
     async def _consume_tts_audio(self, audio_queue: asyncio.Queue) -> None:
         """Consume raw PCM chunks from the TTS audio queue and queue them for playback."""
