@@ -18,6 +18,23 @@ class ExecutionResult(NamedTuple):
     action_result: str = ""
 
 
+class ParsedResponse(NamedTuple):
+    """Parsed spoken text plus actions extracted from an LLM response."""
+    cleaned_response: str
+    actions: list[ParsedAction]
+
+
+# Affirmative / negative phrases accepted during voice confirmation.
+_AFFIRMATIVE_RE = re.compile(
+    r"\b(yes|yeah|yep|yup|sure|ok|okay|confirm|confirmed|do it|go ahead|proceed|affirmative|please do)\b",
+    re.IGNORECASE,
+)
+_NEGATIVE_RE = re.compile(
+    r"\b(no|nope|nah|cancel|stop|don't|do not|negative|abort|nevermind|never mind|reject)\b",
+    re.IGNORECASE,
+)
+
+
 class ActionExecutor:
     """Parses action tags from LLM responses and executes whitelisted actions.
 
@@ -62,6 +79,76 @@ class ActionExecutor:
     def confirm_action(self, action_name: str) -> None:
         """Mark an action name as user-confirmed for this session."""
         self.confirmed_actions.add(action_name)
+
+    def clear_confirmed_actions(self) -> None:
+        """Clear session-level confirmation grants."""
+        self.confirmed_actions.clear()
+
+    def needs_confirmation(self, action: ParsedAction) -> bool:
+        """Return True when the action is gated and not yet session-confirmed."""
+        if not self.require_confirmation:
+            return False
+        if not action_requires_confirmation(action.action_name):
+            return False
+        return action.action_name not in self.confirmed_actions
+
+    @staticmethod
+    def is_affirmative(transcript: str) -> bool:
+        """Return True if the transcript clearly affirms confirmation."""
+        text = (transcript or "").strip()
+        if not text:
+            return False
+        # Prefer explicit negatives when both appear ("yes, no wait").
+        if _NEGATIVE_RE.search(text) and not _AFFIRMATIVE_RE.search(text):
+            return False
+        if _NEGATIVE_RE.search(text) and _AFFIRMATIVE_RE.search(text):
+            # Ambiguous mixed answer — treat as not affirmative.
+            return False
+        return bool(_AFFIRMATIVE_RE.search(text))
+
+    @staticmethod
+    def is_negative(transcript: str) -> bool:
+        """Return True if the transcript clearly declines confirmation."""
+        text = (transcript or "").strip()
+        if not text:
+            return False
+        if _AFFIRMATIVE_RE.search(text) and not _NEGATIVE_RE.search(text):
+            return False
+        return bool(_NEGATIVE_RE.search(text))
+
+    @staticmethod
+    def describe_action(action: ParsedAction) -> str:
+        """Return a short speakable description of an action."""
+        name = action.action_name
+        arg = (action.argument or "").strip()
+        if name.startswith("app:"):
+            app = name.split(":", 1)[1]
+            return f"launch {app}"
+        if name == "write_file":
+            path = arg.split("|", 1)[0].strip() if arg else "a file"
+            return f"write file {path or 'a file'}"
+        if name == "move_file":
+            if "|" in arg:
+                src, dest = arg.split("|", 1)
+                return f"move {src.strip()} to {dest.strip()}"
+            return "move a file"
+        if name == "set_volume":
+            return f"set volume to {arg or 'the requested level'} percent"
+        if name == "set_brightness":
+            return f"set brightness to {arg or 'the requested level'} percent"
+        if arg:
+            return f"{name} {arg}"
+        return name
+
+    def parse_response(self, text: str) -> ParsedResponse:
+        """Parse structured JSON or legacy tags without executing actions."""
+        actions, structured_response = self.parse_structured_actions(text)
+        if actions:
+            cleaned = (structured_response or "").strip()
+        else:
+            actions = self.parse_actions(text)
+            cleaned = self._strip_tags(text)
+        return ParsedResponse(cleaned_response=cleaned.strip(), actions=actions)
 
     def parse_actions(self, text: str) -> list[ParsedAction]:
         """Extract all action tags from the LLM response text.
@@ -123,11 +210,12 @@ class ActionExecutor:
             response = str(response)
         return parsed_actions, response
 
-    def execute(self, parsed: ParsedAction) -> ActionResult:
+    def execute(self, parsed: ParsedAction, *, force: bool = False) -> ActionResult:
         """Execute a single parsed action if it is whitelisted.
 
         Args:
             parsed: The parsed action to execute.
+            force: When True, skip confirmation gates (caller already confirmed).
 
         Returns:
             An ``ActionResult`` with ``stdout`` or ``error`` set.
@@ -141,7 +229,8 @@ class ActionExecutor:
             return ActionResult(error=f"Action '{parsed.action_name}' is not allowed.")
 
         if (
-            self.require_confirmation
+            not force
+            and self.require_confirmation
             and action_requires_confirmation(parsed.action_name)
             and parsed.action_name not in self.confirmed_actions
         ):
@@ -154,8 +243,19 @@ class ActionExecutor:
 
         return handler(parsed.argument)
 
+    def format_action_result(self, action: ParsedAction, result: ActionResult) -> str:
+        """Format one action result line for HUD/TTS."""
+        if result.error:
+            return f"[{action.action_name}] Error: {result.error}"
+        if result.stdout:
+            return f"[{action.action_name}] {result.stdout}"
+        return f"[{action.action_name}] done"
+
     def parse_and_execute(self, text: str) -> ExecutionResult:
         """Parse action tags from the text, execute them, and return a cleaned response.
+
+        Actions that still need confirmation are reported as errors rather than run.
+        Prefer the orchestrator voice-confirmation path when gates are enabled.
 
         Args:
             text: The raw LLM response text.
@@ -164,23 +264,14 @@ class ActionExecutor:
             An ``ExecutionResult`` with the cleaned response (action tags removed)
             and a concatenated string of action results.
         """
-        actions, structured_response = self.parse_structured_actions(text)
-        if actions:
-            cleaned = (structured_response or "").strip()
-        else:
-            actions = self.parse_actions(text)
-            cleaned = self._strip_tags(text)
-
+        parsed = self.parse_response(text)
         results = []
-        for action in actions:
+        for action in parsed.actions:
             result = self.execute(action)
-            if result.error:
-                results.append(f"[{action.action_name}] Error: {result.error}")
-            elif result.stdout:
-                results.append(f"[{action.action_name}] {result.stdout}")
+            results.append(self.format_action_result(action, result))
 
         return ExecutionResult(
-            cleaned_response=cleaned.strip(),
+            cleaned_response=parsed.cleaned_response,
             action_result="\n".join(results),
         )
 
