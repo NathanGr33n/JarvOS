@@ -164,3 +164,15 @@ class TestConfirmationAndSchema:
         executor = ActionExecutor(require_confirmation=True)
         result = executor.execute(ParsedAction("time", ""))
         assert result.error is None
+
+    def test_confirmation_blocks_write_file(self):
+        executor = ActionExecutor(require_confirmation=True)
+        result = executor.execute(ParsedAction("write_file", "/tmp/x|y"))
+        assert result.error is not None
+        assert "confirmation" in result.error
+
+    def test_confirmation_blocks_set_volume(self):
+        executor = ActionExecutor(require_confirmation=True)
+        result = executor.execute(ParsedAction("set_volume", "20"))
+        assert result.error is not None
+        assert "confirmation" in result.error
