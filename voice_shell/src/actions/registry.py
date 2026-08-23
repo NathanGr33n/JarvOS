@@ -1,8 +1,10 @@
 import os
+import re
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -14,14 +16,65 @@ class ActionResult:
     error: Optional[str] = None
 
 
+def _normalize_path(path: str, default: str = ".") -> str:
+    """Expand and absolutize a user-supplied path without requiring existence."""
+    candidate = path.strip() if path else default
+    return os.path.abspath(os.path.expanduser(candidate))
+
+
 def _resolve_existing_path(path: str) -> tuple[Optional[str], Optional[str]]:
     """Return an absolute normalized path if it exists, otherwise an error."""
     candidate = path.strip() if path else "."
-    expanded = os.path.expanduser(candidate)
-    normalized = os.path.abspath(expanded)
+    normalized = _normalize_path(candidate)
     if not os.path.exists(normalized):
         return None, f"Path not found: {candidate}"
     return normalized, None
+
+
+def _split_two_args(argument: str, separator: str = "|") -> Tuple[str, str]:
+    """Split ``left|right`` style arguments; empty parts become empty strings."""
+    raw = (argument or "").strip()
+    if separator not in raw:
+        return raw, ""
+    left, right = raw.split(separator, 1)
+    return left.strip(), right.strip()
+
+
+def _parse_level(argument: str) -> tuple[Optional[int], Optional[str]]:
+    """Parse a 0-100 integer level from a bare number or ``N%`` string."""
+    raw = (argument or "").strip().rstrip("%")
+    if not raw:
+        return None, "Level is required (0-100)."
+    try:
+        value = int(raw)
+    except ValueError:
+        return None, f"Invalid level '{argument}'; expected an integer 0-100."
+    if value < 0 or value > 100:
+        return None, f"Level out of range: {value}. Expected 0-100."
+    return value, None
+
+
+def _run_command(cmd: List[str], timeout: float = 5.0) -> ActionResult:
+    """Run an argv list without a shell and return a truncated result."""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError:
+        return ActionResult(error=f"Command not found: {cmd[0]}")
+    except subprocess.TimeoutExpired:
+        return ActionResult(error=f"Command timed out: {' '.join(cmd)}")
+    except OSError as exc:
+        return ActionResult(error=f"Failed to run {cmd[0]}: {exc}")
+    return ActionResult(
+        stdout=_truncate(result.stdout.strip()),
+        stderr=result.stderr.strip(),
+        returncode=result.returncode,
+    )
 
 
 def _truncate(text: str, limit: int = 4000) -> str:
@@ -191,6 +244,169 @@ def _action_get_battery_status(_: str = "") -> ActionResult:
     return ActionResult(stdout=" ".join(parts))
 
 
+def _action_write_file(argument: str) -> ActionResult:
+    """Write text content to a file.
+
+    Argument format: ``path|content``
+    """
+    path_part, content = _split_two_args(argument)
+    if not path_part:
+        return ActionResult(error="write_file requires 'path|content'.")
+    if content == "" and "|" not in (argument or ""):
+        return ActionResult(error="write_file requires 'path|content'.")
+
+    target = _normalize_path(path_part)
+    parent = os.path.dirname(target) or "."
+    if not os.path.isdir(parent):
+        return ActionResult(error=f"Parent directory not found: {parent}")
+    if os.path.isdir(target):
+        return ActionResult(error=f"Refusing to overwrite directory: {target}")
+
+    try:
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(content)
+    except OSError as exc:
+        return ActionResult(error=f"Cannot write {target}: {exc}")
+    return ActionResult(stdout=f"Wrote {len(content)} bytes to {target}")
+
+
+def _action_move_file(argument: str) -> ActionResult:
+    """Move or rename a file/directory.
+
+    Argument format: ``src|dest``
+    """
+    src_part, dest_part = _split_two_args(argument)
+    if not src_part or not dest_part:
+        return ActionResult(error="move_file requires 'src|dest'.")
+
+    src = _normalize_path(src_part)
+    dest = _normalize_path(dest_part)
+    if not os.path.exists(src):
+        return ActionResult(error=f"Path not found: {src_part}")
+    if os.path.exists(dest):
+        return ActionResult(error=f"Destination already exists: {dest}")
+    parent = os.path.dirname(dest) or "."
+    if not os.path.isdir(parent):
+        return ActionResult(error=f"Destination parent not found: {parent}")
+
+    try:
+        shutil.move(src, dest)
+    except OSError as exc:
+        return ActionResult(error=f"Cannot move {src} to {dest}: {exc}")
+    return ActionResult(stdout=f"Moved {src} -> {dest}")
+
+
+def _action_set_volume(argument: str) -> ActionResult:
+    """Set the default audio sink volume to 0-100 percent via pactl or amixer."""
+    level, error = _parse_level(argument)
+    if error:
+        return ActionResult(error=error)
+    assert level is not None
+
+    if shutil.which("pactl"):
+        result = _run_command(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{level}%"])
+        if result.error or result.returncode != 0:
+            detail = result.error or result.stderr or "pactl failed"
+            return ActionResult(error=f"Failed to set volume: {detail}", returncode=result.returncode)
+        return ActionResult(stdout=f"Volume set to {level}%")
+
+    if shutil.which("amixer"):
+        result = _run_command(["amixer", "-q", "sset", "Master", f"{level}%"])
+        if result.error or result.returncode != 0:
+            detail = result.error or result.stderr or "amixer failed"
+            return ActionResult(error=f"Failed to set volume: {detail}", returncode=result.returncode)
+        return ActionResult(stdout=f"Volume set to {level}%")
+
+    return ActionResult(error="No supported volume control found (pactl/amixer).")
+
+
+def _action_set_brightness(argument: str) -> ActionResult:
+    """Set display brightness to 0-100 percent via brightnessctl or sysfs."""
+    level, error = _parse_level(argument)
+    if error:
+        return ActionResult(error=error)
+    assert level is not None
+
+    if shutil.which("brightnessctl"):
+        result = _run_command(["brightnessctl", "set", f"{level}%"])
+        if result.error or result.returncode != 0:
+            detail = result.error or result.stderr or "brightnessctl failed"
+            return ActionResult(error=f"Failed to set brightness: {detail}", returncode=result.returncode)
+        return ActionResult(stdout=f"Brightness set to {level}%")
+
+    backlight_root = Path("/sys/class/backlight")
+    if backlight_root.exists():
+        devices = sorted(entry for entry in backlight_root.iterdir() if entry.is_dir())
+        if devices:
+            device = devices[0]
+            max_path = device / "max_brightness"
+            cur_path = device / "brightness"
+            try:
+                max_value = int(max_path.read_text(encoding="utf-8").strip())
+                if max_value <= 0:
+                    return ActionResult(error="Invalid max brightness value.")
+                target = max(0, min(max_value, round(max_value * (level / 100.0))))
+                cur_path.write_text(str(target), encoding="utf-8")
+                return ActionResult(stdout=f"Brightness set to {level}% ({target}/{max_value})")
+            except OSError as exc:
+                return ActionResult(error=f"Failed to set brightness via sysfs: {exc}")
+            except ValueError as exc:
+                return ActionResult(error=f"Invalid brightness sysfs value: {exc}")
+
+    return ActionResult(error="No supported brightness control found (brightnessctl/sysfs).")
+
+
+def _read_load_average() -> Optional[str]:
+    try:
+        with open("/proc/loadavg", "r", encoding="utf-8") as handle:
+            parts = handle.read().strip().split()
+        if len(parts) >= 3:
+            return f"{parts[0]} {parts[1]} {parts[2]}"
+    except OSError:
+        return None
+    return None
+
+
+def _read_mem_available_mb() -> Optional[int]:
+    try:
+        with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    match = re.search(r"(\d+)", line)
+                    if match:
+                        return int(match.group(1)) // 1024
+                if line.startswith("MemFree:"):
+                    # Fallback if MemAvailable is missing.
+                    match = re.search(r"(\d+)", line)
+                    if match:
+                        return int(match.group(1)) // 1024
+    except OSError:
+        return None
+    return None
+
+
+def _action_get_system_status(_: str = "") -> ActionResult:
+    """Return a short local system status summary for prompt/context use."""
+    import datetime
+
+    parts = [
+        f"time={datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        f"cwd={os.getcwd()}",
+    ]
+    load = _read_load_average()
+    if load:
+        parts.append(f"load={load}")
+    mem = _read_mem_available_mb()
+    if mem is not None:
+        parts.append(f"mem_available_mb={mem}")
+
+    battery = _action_get_battery_status()
+    if battery.stdout:
+        parts.append(f"battery={battery.stdout}")
+
+    return ActionResult(stdout="; ".join(parts))
+
+
 def _action_launch_app(name: str) -> ActionResult:
     """Launch an application by name."""
     try:
@@ -218,6 +434,11 @@ class ActionRegistry:
         "read_file",
         "search_files",
         "get_battery_status",
+        "write_file",
+        "move_file",
+        "set_volume",
+        "set_brightness",
+        "get_system_status",
     ]
 
     def __init__(
@@ -265,6 +486,16 @@ class ActionRegistry:
             self._registry["time"] = _action_time
         if "get_battery_status" in self.allowed_shell_commands:
             self._registry["get_battery_status"] = _action_get_battery_status
+        if "write_file" in self.allowed_shell_commands:
+            self._registry["write_file"] = _action_write_file
+        if "move_file" in self.allowed_shell_commands:
+            self._registry["move_file"] = _action_move_file
+        if "set_volume" in self.allowed_shell_commands:
+            self._registry["set_volume"] = _action_set_volume
+        if "set_brightness" in self.allowed_shell_commands:
+            self._registry["set_brightness"] = _action_set_brightness
+        if "get_system_status" in self.allowed_shell_commands:
+            self._registry["get_system_status"] = _action_get_system_status
 
         for app in self.allowed_apps:
             self._registry[f"app:{app}"] = self._make_app_launcher(app)
