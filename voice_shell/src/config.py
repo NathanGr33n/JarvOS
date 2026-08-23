@@ -84,6 +84,9 @@ class ActionsConfig:
     # When True, a yes for one gated tool also grants other pending gated tools
     # in the same turn. When False, each gated tool is confirmed separately.
     confirm_batch: bool = True
+    # Append-only SQLite log of executed/cancelled actions.
+    audit_enabled: bool = True
+    audit_db_path: str = "data/action_audit.db"
 
 @dataclass
 class HUDConfig:
