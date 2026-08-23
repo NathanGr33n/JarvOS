@@ -1,4 +1,4 @@
-from voice_shell.src.actions.executor import ActionExecutor, ParsedAction
+from voice_shell.src.actions.executor import ActionExecutor, ParsedAction, ParsedResponse
 from voice_shell.src.actions.registry import ActionRegistry, ActionResult
 
 
@@ -176,3 +176,46 @@ class TestConfirmationAndSchema:
         result = executor.execute(ParsedAction("set_volume", "20"))
         assert result.error is not None
         assert "confirmation" in result.error
+
+    def test_execute_force_skips_confirmation(self):
+        executor = ActionExecutor(require_confirmation=True)
+        result = executor.execute(ParsedAction("time", ""), force=True)
+        assert result.error is None
+
+    def test_needs_confirmation(self):
+        executor = ActionExecutor(require_confirmation=True)
+        assert executor.needs_confirmation(ParsedAction("app:firefox", "")) is True
+        assert executor.needs_confirmation(ParsedAction("time", "")) is False
+        executor.confirm_action("app:firefox")
+        assert executor.needs_confirmation(ParsedAction("app:firefox", "")) is False
+
+    def test_is_affirmative_and_negative(self):
+        assert ActionExecutor.is_affirmative("Yes please") is True
+        assert ActionExecutor.is_affirmative("yep") is True
+        assert ActionExecutor.is_affirmative("no") is False
+        assert ActionExecutor.is_negative("No thanks") is True
+        assert ActionExecutor.is_negative("cancel that") is True
+        assert ActionExecutor.is_negative("yes") is False
+        assert ActionExecutor.is_affirmative("yes, no wait") is False
+
+    def test_describe_action(self):
+        assert "firefox" in ActionExecutor.describe_action(ParsedAction("app:firefox", ""))
+        assert "volume" in ActionExecutor.describe_action(ParsedAction("set_volume", "30"))
+        assert "note.txt" in ActionExecutor.describe_action(
+            ParsedAction("write_file", "/tmp/note.txt|hi")
+        )
+
+    def test_parse_response_structured(self):
+        executor = ActionExecutor()
+        parsed = executor.parse_response(
+            '{"response": "Opening browser.", "actions": [{"name": "app:firefox"}]}'
+        )
+        assert isinstance(parsed, ParsedResponse)
+        assert parsed.cleaned_response == "Opening browser."
+        assert parsed.actions == [ParsedAction("app:firefox", "")]
+
+    def test_clear_confirmed_actions(self):
+        executor = ActionExecutor(require_confirmation=True)
+        executor.confirm_action("write_file")
+        executor.clear_confirmed_actions()
+        assert executor.needs_confirmation(ParsedAction("write_file", "a|b")) is True
