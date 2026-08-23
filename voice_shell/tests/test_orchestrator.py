@@ -19,6 +19,7 @@ class TestOrchestrator:
         config.memory.enabled = True
         config.memory.db_path = str(tmp_path / "test_memory.db")
         config.memory.history_limit = 3
+        config.actions.audit_db_path = str(tmp_path / "test_audit.db")
         config.hud.mode = "text"
         config.health.enabled = False
 
@@ -34,6 +35,7 @@ class TestOrchestrator:
             orch = Orchestrator(config=config)
             yield orch
             orch.memory.close()
+            orch.audit_log.close()
 
     def test_init_default_config(self, orchestrator):
         """Verify the orchestrator initializes with default config and IDLE state."""
@@ -308,6 +310,7 @@ class TestOrchestratorVoiceConfirmation:
         config = Config()
         config.memory.enabled = True
         config.memory.db_path = str(tmp_path / "confirm_memory.db")
+        config.actions.audit_db_path = str(tmp_path / "confirm_audit.db")
         config.hud.mode = "text"
         config.health.enabled = False
         config.actions.require_confirmation = True
@@ -330,6 +333,7 @@ class TestOrchestratorVoiceConfirmation:
             orch.hud.error = MagicMock()
             yield orch
             orch.memory.close()
+            orch.audit_log.close()
 
     @pytest.mark.asyncio
     async def test_immediate_actions_skip_voice_confirm(self, confirm_orch):
@@ -356,10 +360,27 @@ class TestOrchestratorVoiceConfirmation:
     async def test_gated_action_cancelled_on_no(self, confirm_orch):
         orch = confirm_orch
         orch._confirm_actions_voice = AsyncMock(return_value=False)
+        orch._last_transcript = "open firefox"
         text = await orch._execute_actions_with_confirmation(
             [ParsedAction("app:firefox", "")]
         )
         assert "Cancelled" in text
+        entries = orch.audit_log.list_entries(limit=5)
+        assert len(entries) == 1
+        assert entries[0].action_name == "app:firefox"
+        assert entries[0].status == "cancelled"
+        assert entries[0].user_transcript == "open firefox"
+
+    @pytest.mark.asyncio
+    async def test_immediate_action_is_audited(self, confirm_orch):
+        orch = confirm_orch
+        orch._last_transcript = "what time is it"
+        text = await orch._execute_actions_with_confirmation([ParsedAction("time", "")])
+        assert "time" in text
+        entries = orch.audit_log.list_entries(action_name="time")
+        assert len(entries) == 1
+        assert entries[0].status == "success"
+        assert entries[0].confirmed is False
 
     @pytest.mark.asyncio
     async def test_confirm_actions_voice_yes(self, confirm_orch):
@@ -394,6 +415,7 @@ class TestOrchestratorHealthGates:
 
         config = Config()
         config.memory.db_path = str(tmp_path / "m.db")
+        config.actions.audit_db_path = str(tmp_path / "a.db")
         config.hud.mode = "text"
         config.health.enabled = True
         config.health.startup_timeout = 0.2
@@ -423,6 +445,7 @@ class TestOrchestratorHealthGates:
             )
             yield orch
             orch.memory.close()
+            orch.audit_log.close()
 
     @pytest.mark.asyncio
     async def test_await_engines_ready_success(self, health_orch):
