@@ -110,6 +110,55 @@ TOOL_SCHEMAS: Dict[str, ToolSchema] = {
         description="Return battery charge percentage and charging state when available.",
         category="system",
     ),
+    "write_file": ToolSchema(
+        name="write_file",
+        description="Write text content to a file. Arg format: 'path|content'.",
+        parameters=[
+            ToolParameter(
+                "arg",
+                description="Destination path and content as 'path|content'.",
+                required=True,
+            ),
+        ],
+        requires_confirmation=True,
+        category="filesystem",
+    ),
+    "move_file": ToolSchema(
+        name="move_file",
+        description="Move or rename a file/directory. Arg format: 'src|dest'.",
+        parameters=[
+            ToolParameter(
+                "arg",
+                description="Source and destination as 'src|dest'.",
+                required=True,
+            ),
+        ],
+        requires_confirmation=True,
+        category="filesystem",
+    ),
+    "set_volume": ToolSchema(
+        name="set_volume",
+        description="Set system output volume to a percentage (0-100).",
+        parameters=[
+            ToolParameter("arg", description="Volume level 0-100.", required=True),
+        ],
+        requires_confirmation=True,
+        category="settings",
+    ),
+    "set_brightness": ToolSchema(
+        name="set_brightness",
+        description="Set display brightness to a percentage (0-100).",
+        parameters=[
+            ToolParameter("arg", description="Brightness level 0-100.", required=True),
+        ],
+        requires_confirmation=True,
+        category="settings",
+    ),
+    "get_system_status": ToolSchema(
+        name="get_system_status",
+        description="Return local time, cwd, load, memory, and battery summary.",
+        category="system",
+    ),
     "app:firefox": ToolSchema(
         name="app:firefox",
         description="Launch the Firefox browser.",
