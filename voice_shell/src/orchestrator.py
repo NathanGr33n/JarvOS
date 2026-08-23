@@ -15,8 +15,9 @@ from .engines.tts import TTSClient
 from .engines.wwd import WakeWordDetector
 from .hud import create_hud
 from .utils.wav_writer import write_wav_from_buffer
+from .actions.audit import ActionAuditLog
 from .actions.executor import ActionExecutor, ParsedAction
-from .actions.registry import ActionRegistry, _action_get_system_status
+from .actions.registry import ActionRegistry, ActionResult, _action_get_system_status
 from .actions.schemas import render_tool_schema_prompt
 from .memory import MemoryStore
 from .services import ServiceManager
@@ -124,6 +125,12 @@ class Orchestrator:
         self.system_prompt = f"{base_prompt.rstrip()}\n\n{render_tool_schema_prompt(schema_names)}"
         self.hud = create_hud(self.config.hud)
 
+        # Append-only action audit trail
+        self.audit_log = ActionAuditLog(
+            db_path=self.config.actions.audit_db_path,
+            enabled=self.config.actions.audit_enabled,
+        )
+
         # Persistent + in-memory conversation history
         self.memory = MemoryStore(
             db_path=self.config.memory.db_path,
@@ -207,6 +214,7 @@ class Orchestrator:
         await self.stt.close()
         await self.llm.close()
         self.memory.close()
+        self.audit_log.close()
         closer = getattr(self.hud, "close", None)
         if callable(closer):
             closer()
@@ -358,6 +366,7 @@ class Orchestrator:
         for action in immediate:
             result = self.executor.execute(action, force=True)
             lines.append(self.executor.format_action_result(action, result))
+            self._audit_action(action, result=result, confirmed=False)
 
         if not gated:
             return "\n".join(lines)
@@ -366,6 +375,7 @@ class Orchestrator:
             for action in gated:
                 result = self.executor.execute(action, force=True)
                 lines.append(self.executor.format_action_result(action, result))
+                self._audit_action(action, result=result, confirmed=False)
             return "\n".join(lines)
 
         if self.config.actions.confirm_batch:
@@ -375,9 +385,17 @@ class Orchestrator:
                     self.executor.confirm_action(action.action_name)
                     result = self.executor.execute(action, force=True)
                     lines.append(self.executor.format_action_result(action, result))
+                    self._audit_action(action, result=result, confirmed=True)
             else:
                 for action in gated:
-                    lines.append(f"[{action.action_name}] Cancelled: user declined confirmation.")
+                    msg = f"[{action.action_name}] Cancelled: user declined confirmation."
+                    lines.append(msg)
+                    self._audit_action(
+                        action,
+                        status="cancelled",
+                        detail="user declined confirmation",
+                        confirmed=False,
+                    )
             return "\n".join(lines)
 
         for action in gated:
@@ -386,9 +404,43 @@ class Orchestrator:
                 self.executor.confirm_action(action.action_name)
                 result = self.executor.execute(action, force=True)
                 lines.append(self.executor.format_action_result(action, result))
+                self._audit_action(action, result=result, confirmed=True)
             else:
-                lines.append(f"[{action.action_name}] Cancelled: user declined confirmation.")
+                msg = f"[{action.action_name}] Cancelled: user declined confirmation."
+                lines.append(msg)
+                self._audit_action(
+                    action,
+                    status="cancelled",
+                    detail="user declined confirmation",
+                    confirmed=False,
+                )
         return "\n".join(lines)
+
+    def _audit_action(
+        self,
+        action: ParsedAction,
+        *,
+        result: Optional[ActionResult] = None,
+        status: Optional[str] = None,
+        detail: str = "",
+        confirmed: bool = False,
+    ) -> None:
+        """Persist one action outcome to the append-only audit log."""
+        if result is not None:
+            if result.error:
+                status = "error"
+                detail = result.error
+            else:
+                status = "success"
+                detail = result.stdout or ""
+        self.audit_log.record(
+            action.action_name,
+            argument=action.argument,
+            status=status or "unknown",
+            detail=detail,
+            confirmed=confirmed,
+            user_transcript=self._last_transcript,
+        )
 
     async def _confirm_actions_voice(self, actions: list[ParsedAction]) -> bool:
         """Prompt the user and listen for a short yes/no reply."""
