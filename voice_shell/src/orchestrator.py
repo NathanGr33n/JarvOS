@@ -16,7 +16,7 @@ from .engines.wwd import WakeWordDetector
 from .hud import create_hud
 from .utils.wav_writer import write_wav_from_buffer
 from .actions.executor import ActionExecutor
-from .actions.registry import ActionRegistry
+from .actions.registry import ActionRegistry, _action_get_system_status
 from .actions.schemas import render_tool_schema_prompt
 from .memory import MemoryStore
 from .services import ServiceManager
@@ -56,7 +56,8 @@ class Orchestrator:
         "4. Prefer structured JSON tool calls over legacy tags.\n"
         "5. If no action is needed, return plain natural language text.\n"
         "6. If you cannot perform an action, say so and explain why.\n"
-        "7. Never confirm destructive actions. Only read/list and approved app launch actions are permitted.\n"
+        "7. Prefer read-only tools. write_file, move_file, set_volume, set_brightness, "
+        "and app launches may require confirmation when enabled.\n"
         "8. Legacy [EXEC:...] tags are still accepted, but JSON is preferred.\n"
     )
 
@@ -391,6 +392,9 @@ class Orchestrator:
     def _build_prompt(self, transcript: str) -> str:
         """Build the LLM prompt including system context and recent history."""
         parts = []
+        status = _action_get_system_status("")
+        if status.stdout:
+            parts.append(f"System context: {status.stdout}")
         facts = self.memory.list_facts(limit=5)
         if facts:
             fact_lines = "; ".join(f"{key}={value}" for key, value in facts)
