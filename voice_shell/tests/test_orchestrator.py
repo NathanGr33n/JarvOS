@@ -55,14 +55,16 @@ class TestOrchestrator:
         assert "running=False" in r
 
     def test_build_prompt_empty_history(self, orchestrator):
-        """Verify prompt building with no history includes only the current transcript."""
+        """Verify prompt building with no history includes system context + transcript."""
         orch = orchestrator
         orch._last_transcript = "What time is it?"
         prompt = orch._build_prompt(orch._last_transcript)
-        assert prompt == "User: What time is it?"
+        lines = prompt.split("\n")
+        assert lines[0].startswith("System context:")
+        assert lines[-1] == "User: What time is it?"
 
     def test_build_prompt_with_history(self, orchestrator):
-        """Verify prompt building includes the last 3 turns of history."""
+        """Verify prompt building includes system context and recent history."""
         orch = orchestrator
         orch._history = [
             ("Hello", "Hi there!"),
@@ -71,11 +73,12 @@ class TestOrchestrator:
         orch._last_transcript = "What time is it?"
         prompt = orch._build_prompt(orch._last_transcript)
         lines = prompt.split("\n")
-        assert lines[0] == "User: Hello"
-        assert lines[1] == "Assistant: Hi there!"
-        assert lines[2] == "User: What is the weather?"
-        assert lines[3] == "Assistant: It is sunny."
-        assert lines[4] == "User: What time is it?"
+        assert lines[0].startswith("System context:")
+        assert "User: Hello" in lines
+        assert "Assistant: Hi there!" in lines
+        assert "User: What is the weather?" in lines
+        assert "Assistant: It is sunny." in lines
+        assert lines[-1] == "User: What time is it?"
 
     def test_history_rolls_over(self, orchestrator):
         """Verify history only keeps the last 3 turns."""
