@@ -69,6 +69,11 @@ class ActionsConfig:
             "read_file",
             "search_files",
             "get_battery_status",
+            "write_file",
+            "move_file",
+            "set_volume",
+            "set_brightness",
+            "get_system_status",
         ]
     )
     allowed_apps: list = field(default_factory=lambda: ["firefox", "nautilus", "code", "terminal"])
