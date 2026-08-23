@@ -61,6 +61,56 @@ MODEL_CATALOG: Dict[str, ModelEntry] = {
         ),
         dest_path="piper/en_US-lessac-medium.onnx",
     ),
+    # LLM GGUF weights for llama.cpp (hardware tiers from AI_First_Voice_OS.md).
+    # Official Qwen 7B Q4_K_M is split across two shards; the bartowski single-file
+    # build is catalogued instead so the existing one-URL downloader can fetch it.
+    "qwen2.5-1.5b-instruct-q4": ModelEntry(
+        name="qwen2.5-1.5b-instruct-q4",
+        category="llm",
+        description="Qwen2.5-1.5B-Instruct Q4_K_M GGUF (~1.0GB) - Raspberry Pi 5 tier.",
+        url=(
+            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/"
+            "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+        ),
+        dest_path="llm/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        size_bytes=1_117_320_736,
+    ),
+    "qwen2.5-3b-instruct-q4": ModelEntry(
+        name="qwen2.5-3b-instruct-q4",
+        category="llm",
+        description="Qwen2.5-3B-Instruct Q4_K_M GGUF (~2.0GB) - light laptop tier.",
+        url=(
+            "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/"
+            "qwen2.5-3b-instruct-q4_k_m.gguf"
+        ),
+        dest_path="llm/qwen2.5-3b-instruct-q4_k_m.gguf",
+        size_bytes=2_104_932_768,
+    ),
+    "llama-3.2-3b-instruct-q4": ModelEntry(
+        name="llama-3.2-3b-instruct-q4",
+        category="llm",
+        description="Llama-3.2-3B-Instruct Q4_K_M GGUF (~1.9GB) - budget laptop tier.",
+        url=(
+            "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/"
+            "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+        ),
+        dest_path="llm/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        size_bytes=2_019_377_696,
+    ),
+    "qwen2.5-7b-instruct-q4": ModelEntry(
+        name="qwen2.5-7b-instruct-q4",
+        category="llm",
+        description=(
+            "Qwen2.5-7B-Instruct Q4_K_M GGUF (~4.4GB) - budget laptop tier "
+            "(single-file bartowski build; official Qwen repo ships split shards)."
+        ),
+        url=(
+            "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/"
+            "Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+        ),
+        dest_path="llm/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+        size_bytes=4_683_074_240,
+    ),
 }
 
 
