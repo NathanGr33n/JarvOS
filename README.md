@@ -95,7 +95,7 @@ This project is in **early implementation**. Design docs live in [`ResearchDesig
 - [`AI_First_Voice_OS.md`](ResearchDesign/AI_First_Voice_OS.md) — High-level architecture, vision, tech stack, and roadmap
 - [`Voice_Shell_PoC_Technical_Spec.md`](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md) — Detailed technical specification for Phase 1
 - [`Phase3_Custom_OS_Environment.md`](ResearchDesign/Phase3_Custom_OS_Environment.md) — Phase 3 service architecture and session bootstrap design
-- [`voice_shell/`](voice_shell/) — Phase 1 pipeline, Phase 2 Action Core (tool schemas, safe OS tools, confirmation gates, SQLite memory, structured actions, text/floating HUD), and a local model app store (`models list|status|download`)
+- [`voice_shell/`](voice_shell/) — Phase 1 pipeline, Phase 2 Action Core (tool schemas, filesystem/settings tools, confirmation gates, SQLite memory, structured actions, system-context prompts, text/floating HUD), and a local model app store (`models list|status|download`)
 - [`os_environment/`](os_environment/) — Phase 3 foundation: systemd unit templates, install/start scripts, service supervision helpers, and an opt-in dwl-based compositor (`os_environment/compositor/`)
 
 ### Implementation Roadmap
@@ -103,7 +103,7 @@ This project is in **early implementation**. Design docs live in [`ResearchDesig
 | Phase | Goal | Status |
 |-------|------|--------|
 | **Phase 1: Voice Shell** | Python PoC on a standard Linux desktop. Wake word → STT → LLM → TTS → action execution. | **Implemented (active hardening)** |
-| **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **In Progress (schemas, tools, confirmation, memory landed)** |
+| **Phase 2: Action Core** | Structured function-calling with JSON tool schemas, persistent memory, and a text-based HUD. | **Implemented (schemas, FS/settings tools, confirmation, memory, system context)** |
 | **Phase 3: Custom OS** | Boot into a minimal Wayland environment with a floating voice HUD and voice-controlled app launcher. | **In Progress (services + HUD + health gates + opt-in dwl compositor + model app store)** |
 | **Phase 4: Hardware Tuning** | Optimize for Raspberry Pi 5, model swapping, and hardware-accelerated inference. | **Planned** |
 | **Phase 5: Advanced Agents** | Proactive suggestions, multi-user voice profiles, local email/calendar, and advanced coding assistant. | **Planned** |
@@ -225,7 +225,7 @@ Edit [`voice_shell/config.yaml`](voice_shell/config.yaml) (or copy it and pass `
 - `wake_word.engine` — default is `"hotkey"` (`Ctrl+Shift+Space`); set a model path for Porcupine/OpenWakeWord
 - `hud.mode` — `text`, `floating`, or `both`
 - `memory.db_path` — default `data/memory.db` (gitignored)
-- `actions.*` — command/app allowlists and confirmation gates
+- `actions.*` — command/app allowlists and confirmation gates (includes `write_file`, `move_file`, `set_volume`, `set_brightness`, `get_system_status`)
 - `health.*` — startup readiness gates for STT/LLM/TTS
 
 ### 6. Run
