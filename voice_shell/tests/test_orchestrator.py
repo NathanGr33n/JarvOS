@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from voice_shell.src.actions.executor import ParsedAction, ParsedResponse
 from voice_shell.src.orchestrator import Orchestrator, State
 
 
@@ -169,15 +170,16 @@ class TestOrchestrator:
 
         orch.audio_playback.queue_chunk = MagicMock()
         orch.audio_playback.wait_for_empty = AsyncMock()
-        orch.executor.parse_and_execute = MagicMock(return_value=MagicMock(
-            cleaned_response="Hi there.", action_result=""
-        ))
+        orch.executor.parse_response = MagicMock(
+            return_value=ParsedResponse(cleaned_response="Hi there.", actions=[])
+        )
+        orch._execute_actions_with_confirmation = AsyncMock(return_value="")
 
         await orch._thinking_and_speaking_phase()
 
         assert orch.state == State.IDLE
         assert orch._last_response == "Hi there."
-        orch.executor.parse_and_execute.assert_called_once_with("Hi there.")
+        orch.executor.parse_response.assert_called_once_with("Hi there.")
 
     @pytest.mark.asyncio
     async def test_thinking_and_speaking_phase_with_action(self, orchestrator):
@@ -197,9 +199,15 @@ class TestOrchestrator:
 
         orch.audio_playback.queue_chunk = MagicMock()
         orch.audio_playback.wait_for_empty = AsyncMock()
-        orch.executor.parse_and_execute = MagicMock(return_value=MagicMock(
-            cleaned_response="It is right now.", action_result="[time] 12:34 PM"
-        ))
+        orch.executor.parse_response = MagicMock(
+            return_value=ParsedResponse(
+                cleaned_response="It is right now.",
+                actions=[ParsedAction("time", "")],
+            )
+        )
+        orch._execute_actions_with_confirmation = AsyncMock(
+            return_value="[time] 12:34 PM"
+        )
 
         await orch._thinking_and_speaking_phase()
 
@@ -288,6 +296,93 @@ class TestOrchestrator:
 
         assert orch.state == State.IDLE
         assert orch.running is False
+
+
+class TestOrchestratorVoiceConfirmation:
+    """Voice confirmation gates for sensitive actions."""
+
+    @pytest.fixture
+    def confirm_orch(self, tmp_path):
+        from voice_shell.src.config import Config
+
+        config = Config()
+        config.memory.enabled = True
+        config.memory.db_path = str(tmp_path / "confirm_memory.db")
+        config.hud.mode = "text"
+        config.health.enabled = False
+        config.actions.require_confirmation = True
+        config.actions.confirm_batch = True
+        config.actions.confirmation_timeout = 2.0
+
+        with patch("voice_shell.src.orchestrator.AudioCapture"), \
+             patch("voice_shell.src.orchestrator.AudioPlayback"), \
+             patch("voice_shell.src.orchestrator.VoiceActivityDetector"), \
+             patch("voice_shell.src.orchestrator.WakeWordDetector"), \
+             patch("voice_shell.src.orchestrator.STTClient"), \
+             patch("voice_shell.src.orchestrator.LLMClient"), \
+             patch("voice_shell.src.orchestrator.TTSClient"):
+            orch = Orchestrator(config=config)
+            orch.tts.synthesize = MagicMock(return_value=b"audio")
+            orch.audio_playback.queue_chunk = MagicMock()
+            orch.audio_playback.wait_for_empty = AsyncMock()
+            orch.hud.action_result = MagicMock()
+            orch.hud.transcript = MagicMock()
+            orch.hud.error = MagicMock()
+            yield orch
+            orch.memory.close()
+
+    @pytest.mark.asyncio
+    async def test_immediate_actions_skip_voice_confirm(self, confirm_orch):
+        orch = confirm_orch
+        orch._confirm_actions_voice = AsyncMock()
+        text = await orch._execute_actions_with_confirmation([ParsedAction("time", "")])
+        assert "time" in text
+        orch._confirm_actions_voice.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_gated_action_runs_after_yes(self, confirm_orch):
+        orch = confirm_orch
+        orch._confirm_actions_voice = AsyncMock(return_value=True)
+        orch.executor.execute = MagicMock(
+            return_value=type("R", (), {"error": None, "stdout": "Volume set to 20%", "stderr": "", "returncode": 0})()
+        )
+        text = await orch._execute_actions_with_confirmation(
+            [ParsedAction("set_volume", "20")]
+        )
+        orch._confirm_actions_voice.assert_awaited_once()
+        assert "Volume set to 20%" in text
+
+    @pytest.mark.asyncio
+    async def test_gated_action_cancelled_on_no(self, confirm_orch):
+        orch = confirm_orch
+        orch._confirm_actions_voice = AsyncMock(return_value=False)
+        text = await orch._execute_actions_with_confirmation(
+            [ParsedAction("app:firefox", "")]
+        )
+        assert "Cancelled" in text
+
+    @pytest.mark.asyncio
+    async def test_confirm_actions_voice_yes(self, confirm_orch):
+        orch = confirm_orch
+        orch._capture_confirmation_transcript = AsyncMock(return_value="yes")
+        ok = await orch._confirm_actions_voice([ParsedAction("set_volume", "10")])
+        assert ok is True
+        orch.tts.synthesize.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_confirm_actions_voice_no(self, confirm_orch):
+        orch = confirm_orch
+        orch._capture_confirmation_transcript = AsyncMock(return_value="no")
+        ok = await orch._confirm_actions_voice([ParsedAction("write_file", "a|b")])
+        assert ok is False
+
+    @pytest.mark.asyncio
+    async def test_confirm_actions_voice_unclear_then_yes(self, confirm_orch):
+        orch = confirm_orch
+        orch._capture_confirmation_transcript = AsyncMock(side_effect=["maybe", "yes"])
+        ok = await orch._confirm_actions_voice([ParsedAction("app:code", "")])
+        assert ok is True
+        assert orch._capture_confirmation_transcript.await_count == 2
 
 
 class TestOrchestratorHealthGates:
