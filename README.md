@@ -205,16 +205,20 @@ python -m voice_shell.main models download piper-lessac-medium
 python -m voice_shell.main models status
 ```
 
-Catalog entries currently include STT/TTS artifacts such as `whisper-tiny`, `whisper-base`, and `piper-lessac-medium`. LLM GGUF weights are still fetched manually, for example:
+Catalog entries include STT/TTS artifacts (`whisper-tiny`, `whisper-base`, `piper-lessac-medium`) and LLM GGUF weights:
+
+| Catalog name | Tier | Approx. size |
+|--------------|------|--------------|
+| `qwen2.5-1.5b-instruct-q4` | Raspberry Pi 5 | ~1.0 GiB |
+| `qwen2.5-3b-instruct-q4` | Light laptop | ~2.0 GiB |
+| `llama-3.2-3b-instruct-q4` | Budget laptop | ~1.9 GiB |
+| `qwen2.5-7b-instruct-q4` | Budget laptop | ~4.4 GiB |
 
 ```bash
-pip install huggingface-hub
-huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct-GGUF \
-  qwen2.5-1.5b-instruct-q4_k_m.gguf \
-  --local-dir ./models/llm/
+python -m voice_shell.main models download qwen2.5-1.5b-instruct-q4
 ```
 
-Point `tts.model_path` and your llama/whisper server flags at the downloaded files. Piper also needs the matching `.onnx.json` next to the voice model when required by your Piper build.
+Point `tts.model_path` and your llama/whisper server flags at the downloaded files (LLM files land under `models/llm/`). Piper also needs the matching `.onnx.json` next to the voice model when required by your Piper build.
 
 ### 5. Configure
 
