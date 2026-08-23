@@ -60,3 +60,19 @@ class TestToolSchemas:
         assert action_requires_confirmation("app:firefox") is True
         assert action_requires_confirmation("ls") is False
         assert action_requires_confirmation("app:custom") is True
+        assert action_requires_confirmation("write_file") is True
+        assert action_requires_confirmation("move_file") is True
+        assert action_requires_confirmation("set_volume") is True
+        assert action_requires_confirmation("set_brightness") is True
+
+    def test_new_settings_and_fs_tools_present(self):
+        names = {s.name for s in list_tool_schemas()}
+        assert "write_file" in names
+        assert "move_file" in names
+        assert "set_volume" in names
+        assert "set_brightness" in names
+        assert "get_system_status" in names
+
+    def test_validate_write_file_requires_arg(self):
+        assert validate_action("write_file", "") is not None
+        assert validate_action("write_file", "/tmp/a.txt|hi") is None
