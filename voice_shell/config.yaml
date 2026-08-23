@@ -32,6 +32,8 @@ actions:
   require_confirmation: true
   confirmation_timeout: 8.0
   confirm_batch: true
+  audit_enabled: true
+  audit_db_path: "data/action_audit.db"
 hud:
   enabled: true
   show_timestamps: true

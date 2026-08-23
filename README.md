@@ -225,7 +225,7 @@ Edit [`voice_shell/config.yaml`](voice_shell/config.yaml) (or copy it and pass `
 - `wake_word.engine` — default is `"hotkey"` (`Ctrl+Shift+Space`); set a model path for Porcupine/OpenWakeWord
 - `hud.mode` — `text`, `floating`, or `both`
 - `memory.db_path` — default `data/memory.db` (gitignored)
-- `actions.*` — command/app allowlists and confirmation gates (includes `write_file`, `move_file`, `set_volume`, `set_brightness`, `get_system_status`). With `require_confirmation: true` (default), gated tools prompt for a spoken yes/no before running (`confirmation_timeout`, `confirm_batch`).
+- `actions.*` — command/app allowlists and confirmation gates (includes `write_file`, `move_file`, `set_volume`, `set_brightness`, `get_system_status`). With `require_confirmation: true` (default), gated tools prompt for a spoken yes/no before running (`confirmation_timeout`, `confirm_batch`). Action outcomes are append-only audited to `actions.audit_db_path` (default `data/action_audit.db`) when `actions.audit_enabled` is true.
 - `health.*` — startup readiness gates for STT/LLM/TTS
 
 ### 6. Run
