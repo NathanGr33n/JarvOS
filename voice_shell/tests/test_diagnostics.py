@@ -105,14 +105,22 @@ class TestStatusCLI:
         ready_report = _sample_report(ready=True)
         down_report = _sample_report(ready=False)
 
-        with patch("voice_shell.main.collect_diagnostic_report", new=AsyncMock(return_value=ready_report)):
+        # diagnostics is imported lazily inside _run_status so models CLI can
+        # run without audio/engine deps; patch the source module instead.
+        with patch(
+            "voice_shell.src.diagnostics.collect_diagnostic_report",
+            new=AsyncMock(return_value=ready_report),
+        ):
             with pytest.raises(SystemExit) as exc:
                 main_mod.main(["--config", str(tmp_path / "missing.yaml"), "status"])
             assert exc.value.code == 0
             out = capsys.readouterr().out
             assert "READY" in out
 
-        with patch("voice_shell.main.collect_diagnostic_report", new=AsyncMock(return_value=down_report)):
+        with patch(
+            "voice_shell.src.diagnostics.collect_diagnostic_report",
+            new=AsyncMock(return_value=down_report),
+        ):
             with pytest.raises(SystemExit) as exc:
                 main_mod.main(["status", "--format", "json"])
             assert exc.value.code == 1
@@ -132,6 +140,8 @@ class TestModelsCLI:
         assert exc.value.code == 0
         out = capsys.readouterr().out
         assert "whisper-tiny" in out
+        assert "qwen2.5-1.5b-instruct-q4" in out
+        assert "[llm]" in out
 
     def test_models_status(self, tmp_path: Path, capsys):
         with pytest.raises(SystemExit) as exc:
