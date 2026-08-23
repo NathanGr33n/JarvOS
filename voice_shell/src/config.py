@@ -77,7 +77,13 @@ class ActionsConfig:
         ]
     )
     allowed_apps: list = field(default_factory=lambda: ["firefox", "nautilus", "code", "terminal"])
-    require_confirmation: bool = False
+    # When True, gated tools wait for a spoken yes/no before running.
+    require_confirmation: bool = True
+    # Max seconds to listen for a confirmation reply after prompting.
+    confirmation_timeout: float = 8.0
+    # When True, a yes for one gated tool also grants other pending gated tools
+    # in the same turn. When False, each gated tool is confirmed separately.
+    confirm_batch: bool = True
 
 @dataclass
 class HUDConfig:
