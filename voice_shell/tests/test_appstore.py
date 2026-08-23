@@ -37,6 +37,26 @@ class TestManifest:
         stt_entries = manifest.list_models(category="stt")
         assert all(e.category == "stt" for e in stt_entries)
 
+    def test_llm_catalog_entries_present(self):
+        llm_entries = manifest.list_models(category="llm")
+        names = {e.name for e in llm_entries}
+        assert "qwen2.5-1.5b-instruct-q4" in names
+        assert "qwen2.5-3b-instruct-q4" in names
+        assert "llama-3.2-3b-instruct-q4" in names
+        assert "qwen2.5-7b-instruct-q4" in names
+        for entry in llm_entries:
+            assert entry.category == "llm"
+            assert entry.dest_path.startswith("llm/")
+            assert entry.url.startswith("https://huggingface.co/")
+            assert entry.dest_path.endswith(".gguf")
+            assert entry.size_bytes is None or entry.size_bytes > 0
+
+    def test_get_model_llm_entry(self):
+        entry = manifest.get_model("qwen2.5-1.5b-instruct-q4")
+        assert entry is not None
+        assert "qwen2.5-1.5b-instruct-q4_k_m.gguf" in entry.url
+        assert entry.dest_path == "llm/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+
     def test_get_model_unknown_returns_none(self):
         assert manifest.get_model("does-not-exist") is None
 
@@ -44,6 +64,10 @@ class TestManifest:
         """The catalog must never ship pre-filled checksums (see manifest.py docstring)."""
         for entry in manifest.MODEL_CATALOG.values():
             assert not hasattr(entry, "sha256")
+
+    def test_catalog_urls_are_https_only(self):
+        for entry in manifest.MODEL_CATALOG.values():
+            assert entry.url.startswith("https://"), entry.name
 
 
 class TestDownloader:

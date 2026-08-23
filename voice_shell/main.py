@@ -5,8 +5,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from voice_shell.src.config import Config
-from voice_shell.src.diagnostics import collect_diagnostic_report, format_report
-from voice_shell.src.orchestrator import Orchestrator
 
 
 def _configure_logging(level: str = "INFO") -> None:
@@ -72,12 +70,16 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 
 async def _run_orchestrator(config_path: Path) -> None:
+    from voice_shell.src.orchestrator import Orchestrator
+
     config = Config.from_yaml(config_path) if config_path.exists() else Config()
     orchestrator = Orchestrator(config=config)
     await orchestrator.run()
 
 
 async def _run_status(config_path: Path, fmt: str) -> int:
+    from voice_shell.src.diagnostics import collect_diagnostic_report, format_report
+
     path = config_path if config_path is not None and config_path.exists() else None
     if config_path is not None and not config_path.exists():
         logging.getLogger(__name__).warning("Config not found at %s; using defaults.", config_path)
@@ -95,7 +97,11 @@ def _run_models(args: argparse.Namespace) -> int:
 
     if args.models_command == "list":
         for entry in list_models():
-            print(f"{entry.name} [{entry.category}] - {entry.description}")
+            size = ""
+            if entry.size_bytes:
+                gib = entry.size_bytes / (1024 ** 3)
+                size = f" (~{gib:.1f} GiB)" if gib >= 1 else f" (~{entry.size_bytes / (1024 ** 2):.0f} MiB)"
+            print(f"{entry.name} [{entry.category}] - {entry.description}{size}")
         return 0
 
     if args.models_command == "status":
