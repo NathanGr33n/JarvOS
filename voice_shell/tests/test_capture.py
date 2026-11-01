@@ -112,10 +112,10 @@ class TestAudioCapture:
         capture = AudioCapture()
         if listening:
             capture.start_listening()
-        source = bytearray(b"\x01\x02\x03\x04")
+        source = buffer_type(bytearray(b"\x01\x02\x03\x04"))
         expected = bytes(source)
 
-        capture._callback(buffer_type(source), 2, {}, None)
+        capture._callback(source, 2, {}, None)
         source[:] = b"\x00" * len(source)
 
         chunk = capture._queue.get_nowait()
