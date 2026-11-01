@@ -1,0 +1,7 @@
+# Native audio, wake-word, and GUI engines are mocked in tests/conftest.py.
+aiohttp>=3.9.0
+numpy>=1.24.0
+pyyaml>=6.0.1
+cffi>=1.15.0
+pytest>=8.0
+pytest-asyncio>=0.23
