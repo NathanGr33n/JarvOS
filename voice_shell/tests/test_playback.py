@@ -3,6 +3,7 @@ import queue
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cffi import FFI
 
 from voice_shell.src.audio.playback import AudioPlayback, AudioPlaybackError
 
@@ -153,6 +154,20 @@ class TestAudioPlayback:
 
         assert bytes(output) == expected
         assert playback._thread_queue.empty()
+
+    def test_callback_writes_cffi_buffer(self):
+        """CFFI slice assignment must support audio, carryover, and silence."""
+        ffi = FFI()
+        output = ffi.buffer(ffi.new("char[]", 8))
+        playback = AudioPlayback()
+        playback._thread_queue = queue.Queue()
+        playback._thread_queue.put_nowait(b"abcdefghijkl")
+        playback._thread_queue.put_nowait(b"mn")
+
+        for expected in (b"abcdefgh", b"ijklmn\x00\x00", b"\x00" * 8):
+            output[:] = b"\xff" * 8
+            playback._callback(output, 4, {}, None)
+            assert bytes(output) == expected
 
     @pytest.mark.parametrize("channels, dtype", [(1, "int16"), (2, "int16"), (2, "float32")])
     def test_callback_preserves_oversized_chunk_order(self, channels, dtype):
