@@ -147,9 +147,9 @@ class TestAudioPlayback:
         playback._thread_queue = queue.Queue()
         for chunk in chunks:
             playback._thread_queue.put_nowait(chunk)
-        output = bytearray(b"\xff" * 8)
+        output = buffer_type(bytearray(b"\xff" * 8))
 
-        playback._callback(buffer_type(output), 4, {}, None)
+        playback._callback(output, 4, {}, None)
 
         assert bytes(output) == expected
         assert playback._thread_queue.empty()
