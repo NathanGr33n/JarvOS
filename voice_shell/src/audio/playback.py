@@ -1,8 +1,7 @@
 import asyncio
 import logging
+import queue
 from typing import Optional
-
-import numpy as np
 
 try:
     import sounddevice as sd
@@ -51,43 +50,44 @@ class AudioPlayback:
         self.device = device
 
         self._queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-        self._thread_queue: "queue.Queue" = None  # initialized in start()
+        self._thread_queue: Optional[queue.Queue] = None  # initialized in start()
+        self._pending = memoryview(b"")
         self._stream: Optional[sd.RawOutputStream] = None
         self._running: bool = False
         self._bridge_task: Optional[asyncio.Task] = None
 
-    def _callback(self, outdata: np.ndarray, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
+    def _callback(self, outdata, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
         """sounddevice output callback (runs in a separate thread)."""
         if status:
             logger.debug("[AudioPlayback] status: %s", status)
 
-        try:
-            chunk = self._thread_queue.get_nowait()
-            if len(chunk) >= outdata.nbytes:
-                outdata[:] = np.frombuffer(chunk[: outdata.nbytes], dtype=self.dtype).reshape(
-                    outdata.shape
-                )
-                if len(chunk) > outdata.nbytes:
-                    # leftover bytes go back to the front of the queue
-                    self._thread_queue.put(chunk[outdata.nbytes :])
-            else:
-                # partial chunk: pad with zeros
-                outdata[: len(chunk) // np.dtype(self.dtype).itemsize] = np.frombuffer(
-                    chunk, dtype=self.dtype
-                )
-                outdata[len(chunk) // np.dtype(self.dtype).itemsize :] = 0
-        except Exception:
-            # Queue empty or format mismatch: emit silence
-            outdata.fill(0)
+        size = len(outdata)
+        offset = 0
+        while offset < size:
+            if not self._pending:
+                try:
+                    self._pending = memoryview(self._thread_queue.get_nowait())
+                except queue.Empty:
+                    break
+                if not self._pending:
+                    continue
+
+            count = min(len(self._pending), size - offset)
+            outdata[offset : offset + count] = self._pending[:count]
+            # Keep the tail ahead of newer chunks without copying it.
+            self._pending = self._pending[count:]
+            offset += count
+
+        if offset < size:
+            outdata[offset:] = b"\x00" * (size - offset)
 
     def start(self) -> None:
         """Start the audio output stream and the async bridge task."""
         if self._running:
             return
 
-        import queue
-
         self._thread_queue = queue.Queue()
+        self._pending = memoryview(b"")
         try:
             self._stream = sd.RawOutputStream(
                 samplerate=self.sample_rate,
@@ -115,6 +115,7 @@ class AudioPlayback:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+        self._pending = memoryview(b"")
 
     async def _bridge_loop(self) -> None:
         """Bridge from asyncio.Queue to thread-safe queue.Queue."""
@@ -143,7 +144,11 @@ class AudioPlayback:
 
     async def wait_for_empty(self) -> None:
         """Wait until all queued audio chunks have been consumed by the playback stream."""
-        while not self._queue.empty() or not self._thread_queue.empty():
+        while (
+            self._pending
+            or not self._queue.empty()
+            or (self._thread_queue is not None and not self._thread_queue.empty())
+        ):
             await asyncio.sleep(0.05)
 
     def __enter__(self) -> "AudioPlayback":

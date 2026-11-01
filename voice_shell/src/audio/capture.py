@@ -64,13 +64,13 @@ class AudioCapture:
         self._listening_buffer: bytearray = bytearray()
         self._is_listening: bool = False
 
-    def _callback(self, indata: np.ndarray, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
+    def _callback(self, indata, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
         """sounddevice input callback (runs in a separate thread)."""
         if status:
             # Log non-critical statuses but keep capturing.
             print(f"[AudioCapture] status: {status}")
 
-        audio_bytes = indata.tobytes()
+        audio_bytes = bytes(indata)
 
         if self._is_listening:
             self._listening_buffer.extend(audio_bytes)

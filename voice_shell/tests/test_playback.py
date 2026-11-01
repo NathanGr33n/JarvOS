@@ -1,7 +1,9 @@
 import asyncio
+import queue
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cffi import FFI
 
 from voice_shell.src.audio.playback import AudioPlayback, AudioPlaybackError
 
@@ -128,6 +130,100 @@ class TestAudioPlayback:
 
         playback.queue_chunk(b"\x01\x02")
         playback._queue.put_nowait.assert_called_once()
+
+    @pytest.mark.parametrize("buffer_type", [bytearray, memoryview])
+    @pytest.mark.parametrize(
+        "chunks, expected",
+        [
+            ([], b"\x00" * 8),
+            ([b"abcdefgh"], b"abcdefgh"),
+            ([b"abcd"], b"abcd\x00\x00\x00\x00"),
+            ([b"ab", b"cdef", b"gh"], b"abcdefgh"),
+            ([b"", b"abcd", b""], b"abcd\x00\x00\x00\x00"),
+        ],
+    )
+    def test_callback_writes_raw_output(self, buffer_type, chunks, expected):
+        """Fill every output byte, joining chunks before adding silence."""
+        playback = AudioPlayback()
+        playback._thread_queue = queue.Queue()
+        for chunk in chunks:
+            playback._thread_queue.put_nowait(chunk)
+        output = buffer_type(bytearray(b"\xff" * 8))
+
+        playback._callback(output, 4, {}, None)
+
+        assert bytes(output) == expected
+        assert playback._thread_queue.empty()
+
+    def test_callback_writes_cffi_buffer(self):
+        """CFFI slice assignment must support audio, carryover, and silence."""
+        ffi = FFI()
+        output = ffi.buffer(ffi.new("char[]", 8))
+        playback = AudioPlayback()
+        playback._thread_queue = queue.Queue()
+        playback._thread_queue.put_nowait(b"abcdefghijkl")
+        playback._thread_queue.put_nowait(b"mn")
+
+        for expected in (b"abcdefgh", b"ijklmn\x00\x00", b"\x00" * 8):
+            output[:] = b"\xff" * 8
+            playback._callback(output, 4, {}, None)
+            assert bytes(output) == expected
+
+    @pytest.mark.parametrize("channels, dtype", [(1, "int16"), (2, "int16"), (2, "float32")])
+    def test_callback_preserves_oversized_chunk_order(self, channels, dtype):
+        """An oversized chunk's tail must precede all later queued chunks."""
+        playback = AudioPlayback(channels=channels, dtype=dtype)
+        playback._thread_queue = queue.Queue()
+        playback._thread_queue.put_nowait(b"abcdefghijklmnopqrst")
+        playback._thread_queue.put_nowait(b"uvwx")
+        frames = 8 // (channels * (4 if dtype == "float32" else 2))
+        blocks = []
+
+        for _ in range(4):
+            output = bytearray(b"\xff" * 8)
+            playback._callback(memoryview(output), frames, {}, None)
+            blocks.append(bytes(output))
+
+        assert blocks == [b"abcdefgh", b"ijklmnop", b"qrstuvwx", b"\x00" * 8]
+        assert playback._thread_queue.empty()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_empty_includes_pending_audio(self):
+        """Draining must wait for a tail even after both queues are empty."""
+        playback = AudioPlayback()
+        playback._thread_queue = queue.Queue()
+        playback._thread_queue.put_nowait(b"abcdefghijkl")
+        playback._callback(bytearray(8), 4, {}, None)
+        waiter = asyncio.create_task(playback.wait_for_empty())
+
+        try:
+            await asyncio.sleep(0)
+            assert not waiter.done()
+            output = bytearray(8)
+            playback._callback(output, 4, {}, None)
+            assert output == b"ijkl\x00\x00\x00\x00"
+            await asyncio.wait_for(waiter, timeout=1)
+        finally:
+            waiter.cancel()
+            await asyncio.gather(waiter, return_exceptions=True)
+
+    @patch("voice_shell.src.audio.playback.asyncio.get_event_loop")
+    def test_restart_discards_pending_audio(self, mock_get_loop):
+        """A new stream must not replay the previous stream's chunk tail."""
+        mock_get_loop.return_value = self._mock_loop_with_closing_create_task()
+        playback = AudioPlayback()
+        playback.start()
+        playback._thread_queue.put_nowait(b"abcdefghijkl")
+        playback._callback(bytearray(8), 4, {}, None)
+
+        playback.stop()
+        playback.start()
+        output = bytearray(b"\xff" * 8)
+        try:
+            playback._callback(output, 4, {}, None)
+            assert output == b"\x00" * 8
+        finally:
+            playback.stop()
 
     @patch("voice_shell.src.audio.playback.asyncio.get_event_loop")
     def test_context_manager(self, mock_get_loop):

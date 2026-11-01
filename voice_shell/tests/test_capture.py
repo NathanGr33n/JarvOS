@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from cffi import FFI
 
 from voice_shell.src.audio.capture import AudioCapture, AudioCaptureError
 
@@ -103,6 +104,55 @@ class TestAudioCapture:
         # Drain the queue in an isolated event loop
         chunk = asyncio.run(capture.get_chunk())
         assert chunk == fake_data.tobytes()
+
+    @pytest.mark.parametrize("buffer_type", [bytearray, memoryview])
+    @pytest.mark.parametrize("listening", [False, True])
+    def test_callback_copies_raw_buffer(self, buffer_type, listening):
+        """Raw stream memory must be copied before PortAudio reuses it."""
+        capture = AudioCapture()
+        if listening:
+            capture.start_listening()
+        source = buffer_type(bytearray(b"\x01\x02\x03\x04"))
+        expected = bytes(source)
+
+        capture._callback(source, 2, {}, None)
+        source[:] = b"\x00" * len(source)
+
+        chunk = capture._queue.get_nowait()
+        assert isinstance(chunk, bytes)
+        assert chunk == expected
+        if listening:
+            assert capture.stop_listening() == expected
+            assert capture.get_idle_buffer() == b""
+        else:
+            assert capture.get_idle_buffer() == expected
+
+    def test_raw_callback_keeps_recording_when_queue_full(self):
+        """Dropping a queued chunk must not drop listening-buffer audio."""
+        capture = AudioCapture()
+        capture._queue = asyncio.Queue(maxsize=1)
+        capture.start_listening()
+
+        capture._callback(bytearray(b"\x01\x02"), 1, {}, None)
+        capture._callback(memoryview(b"\x03\x04"), 1, {}, None)
+
+        assert capture._queue.qsize() == 1
+        assert capture._queue.get_nowait() == b"\x01\x02"
+        assert capture.stop_listening() == b"\x01\x02\x03\x04"
+
+    def test_callback_copies_cffi_buffer(self):
+        """Exercise the same buffer type supplied by sounddevice Raw streams."""
+        ffi = FFI()
+        source = ffi.new("char[]", b"\x01\x02\x03\x04")
+        raw = ffi.buffer(source, 4)
+        capture = AudioCapture()
+        capture.start_listening()
+
+        capture._callback(raw, 2, {}, None)
+        raw[:] = b"\x00" * 4
+
+        assert capture._queue.get_nowait() == b"\x01\x02\x03\x04"
+        assert capture.stop_listening() == b"\x01\x02\x03\x04"
 
     def test_callback_accumulates_in_listening_mode(self):
         """Verify that audio is accumulated when in listening mode."""
