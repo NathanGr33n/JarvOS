@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from cffi import FFI
 
 from voice_shell.src.audio.capture import AudioCapture, AudioCaptureError
 
@@ -137,6 +138,20 @@ class TestAudioCapture:
 
         assert capture._queue.qsize() == 1
         assert capture._queue.get_nowait() == b"\x01\x02"
+        assert capture.stop_listening() == b"\x01\x02\x03\x04"
+
+    def test_callback_copies_cffi_buffer(self):
+        """Exercise the same buffer type supplied by sounddevice Raw streams."""
+        ffi = FFI()
+        source = ffi.new("char[]", b"\x01\x02\x03\x04")
+        raw = ffi.buffer(source, 4)
+        capture = AudioCapture()
+        capture.start_listening()
+
+        capture._callback(raw, 2, {}, None)
+        raw[:] = b"\x00" * 4
+
+        assert capture._queue.get_nowait() == b"\x01\x02\x03\x04"
         assert capture.stop_listening() == b"\x01\x02\x03\x04"
 
     def test_callback_accumulates_in_listening_mode(self):
