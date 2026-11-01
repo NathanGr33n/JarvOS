@@ -150,7 +150,7 @@ source .venv/bin/activate
 pip install -r voice_shell/requirements.txt
 
 # Recommended for the test suite
-pip install -r voice_shell/requirements-test.txt
+pip install pytest pytest-asyncio
 ```
 
 Optional floating HUD (system packages):
@@ -257,16 +257,11 @@ Examples: *"What files are in my home directory?"* or *"What time is it?"*
 
 ```bash
 source .venv/bin/activate
-pip install -r voice_shell/requirements-test.txt   # if not already installed
+pip install pytest pytest-asyncio   # if not already installed
 pytest
 ```
 
 Tests run headless by default (`JARVOS_HUD_HEADLESS=1` is set in `voice_shell/tests/conftest.py`).
-For a test-only environment, install `voice_shell/requirements-test.txt` instead of
-the runtime requirements; native audio, wake-word, and GUI engines are mocked.
-Audio callback tests exercise bytearray, memoryview, and actual CFFI raw buffers
-without accessing audio hardware. GitHub Actions runs syntax checks and the full
-suite on Python 3.11 and 3.12 for pull requests and pushes to `Master`.
 
 For engine setup details and the full Phase 1 design, see the [Phase 1 Technical Specification](ResearchDesign/Voice_Shell_PoC_Technical_Spec.md). For systemd stack install and the optional compositor, see [`os_environment/systemd/README.md`](os_environment/systemd/README.md).
 
